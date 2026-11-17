@@ -11,11 +11,19 @@ public sealed class AudioPlayer : IDisposable
     public void PlayWav(byte[] wavBytes)
     {
         Stop();
-        _stream = new MemoryStream(wavBytes, writable: false);
-        _reader = new WaveFileReader(_stream);
-        _output = new WaveOutEvent();
-        _output.Init(_reader);
-        _output.Play();
+        try
+        {
+            _stream = new MemoryStream(wavBytes, writable: false);
+            _reader = new WaveFileReader(_stream);
+            _output = new WaveOutEvent();
+            _output.Init(_reader);
+            _output.Play();
+        }
+        catch
+        {
+            Stop();
+            throw;
+        }
     }
 
     public void Stop()

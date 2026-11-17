@@ -15,12 +15,19 @@ dotnet run --project .\src\PaliaVoiceAI.App\PaliaVoiceAI.App.csproj
 ```
 
 ## Current implementation status
-- WPF UI and benchmark result display: included
+- WPF UI with a Dialogue tab and a Capture tab
 - Audio playback abstraction: included (NAudio)
-- TTS abstraction and deterministic mock engine: included
-- KokoroSharp adapter: intentionally isolated as a follow-up integration task. Its API/model packaging must be pinned and validated against the selected package version before shipping.
-- CUDA: not enabled in this starter. Do not install CUDA/cuDNN manually yet. First pin the exact KokoroSharp/ONNX Runtime versions and validate their provider dependencies.
-- Benchmark CSV: saved under `%LOCALAPPDATA%\PaliaVoiceAI\benchmarks.csv`
+- TTS abstraction and deterministic mock engine: included. CPU and CUDA stay unavailable until Kokoro is connected; selecting them does not silently run the mock
+- Screen region capture, Palia window lookup, and Windows Graphics Capture of the game window
+- English Windows OCR, text cleanup, and stable-line / duplicate detection
+- Benchmark CSV: loaded on startup and saved under `%LOCALAPPDATA%\PaliaVoiceAI\benchmarks.csv`
+- Capture settings: `%LOCALAPPDATA%\PaliaVoiceAI\capture.json`
+- KokoroSharp adapter: still a follow-up. Do not install CUDA/cuDNN manually yet
+
+## Tests
+```powershell
+dotnet test .\PaliaVoiceAI.sln
+```
 
 ## Next step
-Replace `MockTtsEngine` with the pinned KokoroSharp implementation, then run CPU and CUDA benchmarks on the target laptop. The mock engine validates the UI/audio/benchmark pipeline only; it does not synthesize speech.
+Pin KokoroSharp and replace `MockTtsEngine` for Phase 1. For the Capture tab, launch Palia, use Preview until the region contains the dialogue, then start monitoring. The suggested bottom region is a starting guess, and in-game OCR has not been verified yet. The mock engine still does not synthesize speech.

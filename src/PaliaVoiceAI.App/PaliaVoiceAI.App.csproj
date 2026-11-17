@@ -1,11 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PaliaVoiceAI.Core\PaliaVoiceAI.Core.csproj" />
     <ProjectReference Include="..\PaliaVoiceAI.TTS\PaliaVoiceAI.TTS.csproj" />
     <ProjectReference Include="..\PaliaVoiceAI.Audio\PaliaVoiceAI.Audio.csproj" />
+    <ProjectReference Include="..\PaliaVoiceAI.Capture\PaliaVoiceAI.Capture.csproj" />
+    <ProjectReference Include="..\PaliaVoiceAI.OCR\PaliaVoiceAI.OCR.csproj" />
   </ItemGroup>
 </Project>

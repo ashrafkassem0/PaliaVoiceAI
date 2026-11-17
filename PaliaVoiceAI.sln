@@ -1,6 +1,6 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 18
-VisualStudioVersion = 18.11.12402.416 oobstable
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaliaVoiceAI.Core", "src\PaliaVoiceAI.Core\PaliaVoiceAI.Core.csproj", "{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D01}"
 EndProject
@@ -9,6 +9,14 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaliaVoiceAI.Audio", "src\PaliaVoiceAI.Audio\PaliaVoiceAI.Audio.csproj", "{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D03}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaliaVoiceAI.App", "src\PaliaVoiceAI.App\PaliaVoiceAI.App.csproj", "{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D04}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaliaVoiceAI.Capture", "src\PaliaVoiceAI.Capture\PaliaVoiceAI.Capture.csproj", "{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D05}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaliaVoiceAI.OCR", "src\PaliaVoiceAI.OCR\PaliaVoiceAI.OCR.csproj", "{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D06}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaliaVoiceAI.Core.Tests", "tests\PaliaVoiceAI.Core.Tests\PaliaVoiceAI.Core.Tests.csproj", "{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D07}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaliaVoiceAI.OCR.Tests", "tests\PaliaVoiceAI.OCR.Tests\PaliaVoiceAI.OCR.Tests.csproj", "{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D08}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -32,8 +40,21 @@ Global
 		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D04}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D04}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D04}.Release|Any CPU.Build.0 = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D05}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D05}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D05}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D05}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D06}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D06}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D06}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D06}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D07}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D07}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D07}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D07}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D08}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D08}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D08}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5B68A9C-2B41-4F8B-8A01-3F8B0B8E2D08}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
