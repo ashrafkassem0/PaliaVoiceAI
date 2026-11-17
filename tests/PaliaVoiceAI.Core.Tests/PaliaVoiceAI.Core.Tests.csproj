@@ -16,4 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PaliaVoiceAI.Core\PaliaVoiceAI.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\src\PaliaVoiceAI.Core\Npc\npc-voices.json" Link="npc-voices.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

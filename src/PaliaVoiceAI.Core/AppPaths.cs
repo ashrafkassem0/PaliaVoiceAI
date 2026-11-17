@@ -9,4 +9,8 @@ public static class AppPaths
     public static string BenchmarksCsv => Path.Combine(Root, "benchmarks.csv");
     public static string CaptureSettings => Path.Combine(Root, "capture.json");
     public static string LastCaptureBmp => Path.Combine(Root, "last-capture.bmp");
+    public static string ModelsDirectory => Path.Combine(Root, "models");
+    public static string KokoroOnnx => Path.Combine(ModelsDirectory, "kokoro.onnx");
+    public static string VoiceProfiles => Path.Combine(Root, "voices.json");
+    public static string NpcVoices => Path.Combine(Root, "npc-voices.json");
 }

@@ -140,7 +140,8 @@ public partial class MainWindow
                     var ocr = await _ocr.RecognizeAsync(image, token).ConfigureAwait(false);
                     var observation = tracker.Observe(ocr.Text, DateTimeOffset.Now);
                     var saveImage = observation.HasNewDialogue;
-                    await Dispatcher.InvokeAsync(() => ApplyObservation(image, observation, saveImage));
+                    var speakerId = observation.HasNewDialogue ? SpeakerIdentifier.FindNpcId(ocr.Text) : null;
+                    await Dispatcher.InvokeAsync(() => ApplyObservation(image, observation, saveImage, speakerId));
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
@@ -185,7 +186,7 @@ public partial class MainWindow
         }
     }
 
-    private void ApplyObservation(CapturedImage image, DialogueObservation observation, bool saveImage)
+    private void ApplyObservation(CapturedImage image, DialogueObservation observation, bool saveImage, string? speakerId = null)
     {
         ShowImage(image);
         OcrPreviewText.Text = observation.Text.Length == 0 ? "(no text)" : observation.Text;
@@ -212,11 +213,8 @@ public partial class MainWindow
             _ => observation.Text.Length == 0 ? "No dialogue in the region." : "Text is still changing. Waiting until it stays still."
         };
 
-        if (observation.HasNewDialogue && CopyDialogueBox.IsChecked == true)
-        {
-            DialogueBox.Text = observation.Text;
-            StatusText.Text = "Captured a new dialogue line. Generate when you want to run it through the mock TTS pipeline.";
-        }
+        if (observation.HasNewDialogue)
+            SpeakCapturedLine(observation.Text, speakerId);
     }
 
     private void ShowImage(CapturedImage image)
@@ -238,6 +236,9 @@ public partial class MainWindow
         DetectButton.IsEnabled = !running;
         SuggestButton.IsEnabled = !running;
         UseGameWindowBox.IsEnabled = !running;
+        _syncingCapture = true;
+        LiveCaptureBox.IsChecked = running;
+        _syncingCapture = false;
     }
 
     private void SetRegion(CaptureRegion region)

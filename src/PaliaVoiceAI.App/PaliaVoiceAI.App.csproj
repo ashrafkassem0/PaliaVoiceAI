@@ -8,6 +8,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="..\PaliaVoiceAI.Core\Npc\npc-voices.json" Link="npc-voices.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Avatars\*.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="KokoroSharp" Version="0.8.4" />
     <ProjectReference Include="..\PaliaVoiceAI.Core\PaliaVoiceAI.Core.csproj" />
     <ProjectReference Include="..\PaliaVoiceAI.TTS\PaliaVoiceAI.TTS.csproj" />
     <ProjectReference Include="..\PaliaVoiceAI.Audio\PaliaVoiceAI.Audio.csproj" />

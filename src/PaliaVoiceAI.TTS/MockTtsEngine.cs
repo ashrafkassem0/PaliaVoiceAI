@@ -10,7 +10,7 @@ public sealed class MockTtsEngine : ITtsEngine
     public Task InitializeAsync(TtsOptions options, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
-    public async Task<TtsResult> GenerateAsync(string text, string voiceId, CancellationToken cancellationToken = default)
+    public async Task<TtsResult> GenerateAsync(string text, string voiceId, CancellationToken cancellationToken = default, float speed = 1f)
     {
         if (string.IsNullOrWhiteSpace(text))
             throw new ArgumentException("Text cannot be empty.", nameof(text));
