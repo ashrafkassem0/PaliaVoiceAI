@@ -248,6 +248,8 @@ public partial class MainWindow
     {
         if (SoundList.SelectedItem is not SpokenClip clip)
             return;
+        Interlocked.Increment(ref _speakSerial);
+        _speech.Stop();
         try
         {
             _lastAudio = clip.Audio;

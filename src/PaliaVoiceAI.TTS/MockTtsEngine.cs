@@ -5,6 +5,8 @@ namespace PaliaVoiceAI.TTS;
 // This engine validates the application pipeline only. It does NOT generate speech.
 public sealed class MockTtsEngine : ITtsEngine
 {
+    public const string EngineVersion = "mock-1";
+
     public string Name => "Pipeline Mock (no speech synthesis)";
 
     public Task InitializeAsync(TtsOptions options, CancellationToken cancellationToken = default)

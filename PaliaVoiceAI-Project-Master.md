@@ -34,7 +34,7 @@ dotnet test .\PaliaVoiceAI.sln --nologo
 dotnet build .\src\PaliaVoiceAI.App\PaliaVoiceAI.App.csproj -c Release --nologo
 ```
 
-Last full check on 2026-11-17: 29 tests passed (Core 26, OCR 3). Release build of the app succeeded with 0 warnings. The voice-library window listed Kenyatta, Eshe, Auni, Taylin, The Gardener, Ulfe, and Unassigned. The portrait pixels inside that window were not looked at.
+Last full check on 2026-11-17: 40 tests passed (Core 37, OCR 3). Release build of the app succeeded with 0 warnings. The voice-library window listed Kenyatta, Eshe, Auni, Taylin, The Gardener, Ulfe, and Unassigned. The portrait pixels inside that window were not looked at. The Phase 4 queue and cache were checked in Core tests, not with a live Kokoro sentence and not with Palia.
 
 ---
 
@@ -42,14 +42,14 @@ Last full check on 2026-11-17: 29 tests passed (Core 26, OCR 3). Release build o
 
 | Phase | Close condition | State |
 | --- | --- | --- |
-| 1. Kokoro speech | Real local speech on CPU, then CUDA if it is available, with a repeatable measurement | CPU is closed. CUDA is not available on the installed ONNX package and falls back to CPU. Listening quality and "while Palia is running" were not measured. |
-| 2. OCR and capture | Read a new dialogue line once, and do not read the same line again | Logic is tested. Live Palia capture is not. |
-| 3. NPC voices | Pick the right voice profile for known dialogue, and do something clear when the speaker is unknown | Name-plate matching is unit-tested. The window can change and save a voice. Pace is sent to Kokoro and has not been heard. Live detection inside Palia is not done. |
-| 4. Queue and cache | No overlapping speech, and no second generation when text, voice, and settings match | Not started. |
-| 5. Settings and reliability | Settings, logging, and a long play session | Not started, except the capture settings that already save. |
+| 1. Kokoro speech | Real local speech on CPU, then CUDA if it is available, with a repeatable measurement | CPU speech was measured again while the Palia process was running. CUDA still falls back to CPU. The user heard the two `af_bella` pace files and did not describe the sound. Other voices were not heard. FPS beside the game was not measured. |
+| 2. OCR and capture | Read a new dialogue line once, and do not read the same line again | The live window was found and one Einar line was spoken once. The same line was not seen again inside the duplicate window, because the card advanced. |
+| 3. NPC voices | Pick the right voice profile for known dialogue, and do something clear when the speaker is unknown | Einar's name plate selected Einar. Daiya, named only in the sentence, was not selected. Pace `0.85` is longer than `1.15` for `af_bella`. A card with no name plate has not been captured. |
+| 4. Queue and cache | No overlapping speech, and no second generation when text, voice, and settings match | Checked in Core tests. A new line waits until the current line finishes playing. The same text, voice, pace, and model was not generated again. Stop drops a line that is still waiting. A live Kokoro sentence was not replayed from the cache, and Palia was not running. |
+| 5. Settings and reliability | Settings, logging, and a long play session | Not started, except the capture settings that already save and the cache folder delete button. |
 | 6. Installer | Another Windows PC can install and remove it | Not started. |
 
-**Do this next:** task T1 below. It is the remaining Phase 3 check that does not need the game.
+**Do this next:** T2 and T3 stay open. On 2026-11-17 the user said to skip those live checks and start Phase 4. Phase 4's tested close is recorded below. Do not start Phase 5 unless the user says to.
 
 ---
 
@@ -57,7 +57,7 @@ Last full check on 2026-11-17: 29 tests passed (Core 26, OCR 3). Release build o
 
 ## T1 — Prove pace changes the audio
 
-**Status:** Partial. The slider saves a pace and `KokoroTtsEngine` passes `KokoroTTSPipelineConfig.Speed`. Nobody has compared two files.
+**Status:** Done. The same line and voice `af_bella` were generated while the Palia process was running. Pace `0.85` produced 5,084 ms of audio (244,096 bytes, generation 2,208 ms). Pace `1.15` produced 4,086 ms (196,158 bytes, generation 994 ms). The slower pace is the longer file. WAV header durations match those numbers. On 2026-11-17 the user said they heard both files. They did not describe which sounded longer or judge the voice.
 
 **Done when:** The same line and the same voice are generated at pace `0.85` and `1.15`. The slower pace produces a longer WAV. Write both durations and the voice id in the Phase 3 status. Do not write that someone listened unless they did.
 
@@ -67,17 +67,29 @@ Last full check on 2026-11-17: 29 tests passed (Core 26, OCR 3). Release build o
 
 ## T2 — Live speaker check
 
-**Status:** Blocked until Palia is running.
+**Status:** Partial. Einar was selected from a live card. A card with no name plate has not been captured. On 2026-11-17 the user said to skip this check and start Phase 4.
 
 **Done when:** A real dialogue card whose first plate is a known name selects that villager. A card with no name plate selects Unknown. A name that only appears inside a sentence does not select that villager. Paste the OCR text into the Phase 3 status.
+
+**2026-11-17 live card.** Process `PaliaClientSteam-Win64-Shipping`, title `Palia`, client 1536×960 at (0, 0). Region `105,550` size `780×350` (the 1920×1200 capture frame is the same client at 125% scale). Raw OCR:
+
+```
+Einar I -
+Sometimes I like to go watch the familial
+unit known as Daiya eat dinner at night.
+```
+
+Speaker `einar`, voice `bm_lewis`. Daiya is only in the sentence and was not selected. Nobody has shown a card with no name plate.
 
 **Where:** `SpeakerIdentifier.FindNpcId` in `src/PaliaVoiceAI.Core/Npc/NpcProfiles.cs`, called from `MainWindow.Capture.cs`.
 
 ## T3 — Live OCR close for Phase 2
 
-**Status:** Blocked until Palia is running.
+**Status:** Partial. The window, region, and one spoken line are recorded. The duplicate suppression was not observed. On 2026-11-17 the user said to skip this check and start Phase 4.
 
 **Done when:** The game window is found, the dialogue region contains the card, one new line is spoken or copied once, and the same line is suppressed inside the duplicate window. Record the process name, the region, and the text.
+
+**2026-11-17 live read.** Same window and region as T2. The card image contained Einar's dialogue. The cleaned line was copied once and spoken once with Kokoro on CPU: generation 2,905 ms, audio 5,494 ms, 263,762 bytes, voice `bm_lewis`. The card then advanced to new lines, so the tracker reported changes and not a duplicate. Leave one line up, close it, and open that same line again within 8 seconds.
 
 **Start from:** on a 1920×1200 frame, region `x=131, y=688, width=975, height=438`. That came from the Kenyatta screenshot (1024×576 crop at 70,330 size 520×210). Display scaling on this PC was 125% (a 1280×820 window was about 1600×1025 physical pixels). Re-check the region against the live window; do not assume the numbers still match.
 
@@ -85,9 +97,13 @@ Last full check on 2026-11-17: 29 tests passed (Core 26, OCR 3). Release build o
 
 ## T4 — Phase 4 queue
 
-**Status:** Not started. Begin only after T1 is recorded, or when the user says to skip T1.
+**Status:** Done. The user said to skip T2 and T3 and start this task. Core tests on 2026-11-17: two submitted lines produced `prepare, generate, play` for the first line before the second line was prepared. The second generate did not start while the first line was playing, and playback concurrency stayed at 1. The same text, voice `bm_lewis`, pace `1.00`, and model hash was delivered from the cache the second time (`FromCache` true, one generate). Pace `0.85` was generated again. Stop while the first line was playing cancelled that line and the waiting line, and the waiting line was not prepared. `DeleteOlderThan` removed one file dated two days earlier and left the newer file. `DeleteAll` removed the file that remained. A key containing `../` was not stored. Release build of the app succeeded with 0 warnings. Kokoro was not asked to speak a cached line in this check, and Palia was not running.
 
 **Done when:** A new line cancels or waits on the previous one with no overlap, and a repeated line with the same voice, pace, and model is not generated again.
+
+**Rule:** a new line waits. The current line finishes generating and playing before the next line starts. Stop drops every waiting line, stops playback, and does not play a result that comes back after Stop. Kokoro still cannot be cut mid-call. That call is not played if Stop already happened.
+
+**Cache key:** trimmed text, voice id, pace rounded to two decimals and clamped to `0.70`–`1.40`, lowercase SHA-256 of the model file, engine version `KokoroSharp 0.8.4`, content type `audio/wav`. Thread count and CPU/CUDA are not part of the key. Files are `{key}.wav` in `%LOCALAPPDATA%\PaliaVoiceAI\cache`. Settings has **Delete stored lines**. `SpeechCache.DeleteOlderThan` is not run on a timer, because the cache size is still undecided. Mock lines use hash `mock` and version `mock-1`, so they do not share files with Kokoro.
 
 ---
 
@@ -103,7 +119,7 @@ Target loop:
 4. If the name plate is a known villager, use that profile. Otherwise use Unknown.
 5. Speak it with local Kokoro, one generation at a time.
 6. Play the WAV without touching the game.
-7. Later, reuse a stored WAV when the line and the settings match. That cache does not exist yet.
+7. Later, reuse a stored WAV when the line and the settings match. The cache key and the folder exist. A live Kokoro replay from that folder was not measured.
 
 ## 1.1 Principles
 
@@ -148,7 +164,7 @@ The panel is 1920×1200, not 1920×1080. Any FPS benchmark must record the resol
 - CPU is the guaranteed path.
 - CUDA may be tried on the RTX 5050 only after the package versions are written down here.
 - Do not turn CUDA on by default before FPS, 1% low, and VRAM are measured.
-- One TTS generation at a time until a queue exists.
+- One TTS generation at a time. The next line waits until the current line has finished playing.
 - Cache audio only when the cache key includes every setting that changes the sound.
 
 ---
@@ -168,9 +184,9 @@ The panel is 1920×1200, not 1920×1080. Any FPS benchmark must record the resol
 | FR-007 | Skip duplicates | Do not generate the same text again inside the duplicate window | Unit-tested. Default window 8 seconds. Not tested live |
 | FR-008 | Identify the NPC | Match the speaker, or make the unknown case obvious | Name plate only. Unit-tested |
 | FR-009 | Voice profiles | Each NPC keeps its own voice and pace | Roster in `npc-voices.json`. User overrides in `voices.json` |
-| FR-010 | Audio queue | Order lines and do not overlap them | Not started |
-| FR-011 | Stop now | Stop playback and cancel queued work | Partial. See FR-004 |
-| FR-012 | Audio cache | Reuse audio when text, voice, and settings match | Not started |
+| FR-010 | Audio queue | Order lines and do not overlap them | A new line waits. Core test: playback concurrency 1, and the second line started only after the first play finished |
+| FR-011 | Stop now | Stop playback and cancel queued work | Stop drops waiting lines and stops playback. An in-flight Kokoro call still runs until the sentence ends, and that result is not played if Stop already happened |
+| FR-012 | Audio cache | Reuse audio when text, voice, and settings match | Core test: the second identical line was `FromCache` and was not generated. Pace `0.85` was generated again. Not measured with Kokoro |
 | FR-013 | Benchmark | Record generation time, audio length, RTF, and backend | One CPU row exists. The CSV is reloaded |
 | FR-014 | Remember settings | Restore local settings on launch | Capture settings, voice overrides, and the model path do this |
 | FR-015 | Find the game | Detect Palia or let the user capture manually | Detector is tested against process-name rules. A running game was not checked |
@@ -253,7 +269,7 @@ These are starting points, not tuned results.
 | CPU intra-op threads | 3 | Used for the measured CPU sentence |
 | CPU inter-op threads | 1 | Set in the engine |
 | Graph optimization | Enable all | Set in the engine |
-| Concurrent TTS jobs | 1 | Design rule. A second click cancels the tracked request, but Kokoro itself is not interrupted mid-call |
+| Concurrent TTS jobs | 1 | The queue does not start the next generation until the current line has finished playing. Kokoro itself is not interrupted mid-call |
 | CUDA memory arena | 1GB as a probe only | Not used. Not a cap on total VRAM |
 | OCR poll | 400 ms | Code default |
 | Stable reads before a line is accepted | 2 | Code default |
@@ -308,7 +324,7 @@ There is no dependency-injection container. `MainWindow` constructs the engines.
 | SET-008 | Infrastructure project | Not started | JSON files cover the current settings |
 | SET-009 | Dependency injection | Not started | The window creates the engines |
 | SET-010 | Logging | Not started | Failures go to status text |
-| SET-011 | Unit tests | Done | 2026-11-17: Core 26, OCR 3, all passed |
+| SET-011 | Unit tests | Done | 2026-11-17: Core 37, OCR 3, all passed |
 | SET-012 | CI build | Not started | No pipeline |
 | SET-013 | Build on Windows | Done | Release app build on 2026-11-17, 0 warnings |
 | SET-014 | Launch the WPF window | Partial | The voice library opened and UI Automation saw the villager names. Capture was not clicked against Palia |
@@ -324,7 +340,7 @@ There is no dependency-injection container. `MainWindow` constructs the engines.
 | UI-005 | CPU threads | Done | Passed as `IntraOpNumThreads` for Kokoro. Mock ignores it |
 | UI-006 | Generate | Done | Kokoro for CPU/CUDA, Mock for the silent choice |
 | UI-007 | Play | Done | Last WAV. The Kokoro file was 16-bit PCM, 24000 Hz, mono |
-| UI-008 | Stop | Partial | Stops playback and cancels the download token. Does not interrupt Kokoro mid-synthesis |
+| UI-008 | Stop | Partial | Stops playback and drops waiting lines. Does not interrupt Kokoro mid-synthesis. A result that finishes after Stop is not played |
 | UI-009 | Benchmark grid | Partial | Shows the rows loaded from the CSV |
 | UI-010 | Errors | Partial | Exception text is shown in the status line |
 | UI-011 | Settings | Partial | Capture region, preview, and monitor are on the Settings page. There is no general settings form |
@@ -344,10 +360,10 @@ There is no dependency-injection container. `MainWindow` constructs the engines.
 | CORE-005 | `BenchmarkRecord` | Done | |
 | CORE-006 | `ITtsEngine` | Done | Initialize, Generate, Dispose |
 | CORE-007 | `IOcrEngine` | Done | Implemented by `WindowsOcrEngine` |
-| CORE-008 | `IAudioQueue` | Not started | Phase 4 |
+| CORE-008 | Speech queue | Done | `SpeechQueue`. A new line waits. Tested with a stand-in player |
 | CORE-009 | Voice profile | Done | `NpcProfile`, `VoiceLibraryState`, `VoiceProfileStore` |
 | CORE-010 | NPC identity | Done | Id, name, role, voice, pace, avatar, gender. Matching is the name plate, not a portrait detector |
-| CORE-011 | Drop an old line | Partial | A newer `SpeakAsync` supersedes the previous request number. Kokoro is not cancelled mid-call |
+| CORE-011 | Drop an old line | Partial | A newer line waits. Stop drops waiting lines. Kokoro is not cancelled mid-call |
 | CORE-012 | Duplicates | Done | `DialogueTracker` and its tests |
 
 ## 7.4 TTS
@@ -362,10 +378,10 @@ There is no dependency-injection container. `MainWindow` constructs the engines.
 | TTS-006 | Load the model | Done | Second run used the local file and did not download again |
 | TTS-007 | Real speech | Done | CPU WAV, then playback |
 | TTS-008 | Try the English voices | Partial | `af_bella` spoke. The other ids in the combo have not been synthesized |
-| TTS-009 | Listening review | Not started | Needs a person to listen |
+| TTS-009 | Listening review | Partial | The user heard `af_bella` at paces `0.85` and `1.15`. No other voice was heard, and no quality note was given |
 | TTS-010 | Long text | Not started | |
 | TTS-011 | Streaming | Not started | |
-| TTS-012 | Cancel generation | Partial | Stop cancels the token around the call. The Kokoro call itself finishes |
+| TTS-012 | Cancel generation | Partial | Stop drops waiting lines and does not play a result that finishes after Stop. The Kokoro call itself finishes |
 | TTS-013 | Keep the model locally | Done | See TTS-006 |
 | TTS-014 | Check the model hash before distribution | Not started | The downloaded file's SHA-256 was recorded. The downloader does not yet reject a mismatch. Hash: `0CFD5E79AAB70A3D8C1A57DC639835110DDB32C9F5FF4FDD1F4DB202EA43BB05` |
 | TTS-015 | License review for redistribution | Not verified | KokoroSharp is MIT. The model and voices are Apache-2.0 according to the package notes. A distribution review is still open |
@@ -402,10 +418,10 @@ Generation 1,598 ms. Audio 4,510 ms. RTF 0.354. File 216,508 bytes. Peak sample 
 | AUD-001 | NAudio | Done | 2.2.1 |
 | AUD-002 | `AudioPlayer` | Done | Played the Kokoro WAV from memory |
 | AUD-003 | Play generated audio | Done | The real WAV, not only the silent mock |
-| AUD-004 | Stop | Partial | Stop and dispose exist. Mid-synthesis Kokoro is not cut |
+| AUD-004 | Stop | Partial | Stop drops the queue and stops playback. Mid-synthesis Kokoro is not cut |
 | AUD-005 | Choose a device | Not started | Default output |
-| AUD-006 | Queue | Not started | Phase 4 |
-| AUD-007 | No overlap | Not started | Phase 4 |
+| AUD-006 | Queue | Done | `SpeechQueue` awaits one playback, then starts the next line |
+| AUD-007 | No overlap | Done | Core test kept playback concurrency at 1. The real `AudioPlayer` was not the stand-in in that test |
 | AUD-008 | Crossfade | Deferred | Not a first-release requirement |
 | AUD-009 | Volume | Not started | |
 | AUD-010 | Long playback test | Not verified | |
@@ -436,21 +452,21 @@ Generation 1,598 ms. Audio 4,510 ms. RTF 0.354. File 216,508 bytes. Peak sample 
 | ID | Task | Status | Detail |
 | --- | --- | --- | --- |
 | OCR-001 | Windows OCR | Done | English. If it is missing: Settings, Time & language, Language & region, English optical character recognition |
-| OCR-002 | Capture | Partial | A 24×24 GDI copy worked. Windows Graphics Capture is written and was not used on a live Palia window |
-| OCR-003 | Find the Palia window | Partial | Rules are tested. A running process was not inspected |
-| OCR-004 | Dialogue region | Partial | The Kenyatta suggestion matches the bottom-left card in that screenshot. It still needs a live pass |
-| OCR-005 | Read text | Partial | Read "Kilima" from a drawn image, and the Kenyatta fixture after cleanup. Not from the live UI |
+| OCR-002 | Capture | Partial | A 24×24 GDI copy worked. Windows Graphics Capture read the live Palia window after the factory cast was fixed. The duplicate close is still open |
+| OCR-003 | Find the Palia window | Done | `PaliaClientSteam-Win64-Shipping`, title `Palia`, client 1536×960 at (0, 0) |
+| OCR-004 | Dialogue region | Partial | Suggested `105,550` `780×350` on that client. The crop contained Einar's card. The same line was not repeated |
+| OCR-005 | Read text | Partial | Live OCR read Einar's line, then later lines on the same card. A nameless card was not read |
 | OCR-006 | Clean text | Done | `TextNormalizer` and its tests |
 | OCR-007 | Detect change | Done | Start, change, and end in `DialogueTracker` |
 | OCR-008 | Skip the same text | Done | Duplicate window is unit-tested |
 | OCR-009 | Unclear text | Partial | Empty text and text that is still changing are not accepted. Windows OCR does not give one confidence score |
-| OCR-010 | OCR on the live game | Not verified | Needs Palia and a look at the capture |
+| OCR-010 | OCR on the live game | Partial | Einar's card was captured and read. Duplicate suppression was not observed |
 
 Process names, in order: `PaliaClientSteam-Win64-Shipping`, `PaliaClient-Win64-Shipping`, the test builds, `PaliaClientSteam`, `Palia`, then an exact window title `Palia`. The client must be at least 640×480. `IsBorderRequired` is false when the OS build is 22000 or newer.
 
 Speaker rules already in code:
 
-- A plate is the name, or the name plus trailing number groups (`Kenyatta 0 0`).
+- A plate is the name, or the name plus trailing badge noise (`Kenyatta 0 0`, `Einar I -`, `Einar • VI -`). A real word after the name is not noise.
 - Matching stops at the first spoken sentence. A name inside a sentence is not the speaker.
 - `Eshe` then `Skip` then the line matches Eshe. `Nai'o` matches id `naio`.
 - Lines that start with `(`, `[`, or `chat with ` are prompts, not speech.
@@ -463,11 +479,11 @@ Speaker rules already in code:
 | NPC-001 | Voice profile model | Done | `NpcProfile` and `VoiceLibraryState` |
 | NPC-002 | NPC list | Done | 29 villagers plus Unknown, from `npc-voices.json` |
 | NPC-003 | Bind a voice id | Done | Default in the roster JSON. User change in `voices.json` |
-| NPC-004 | Read the name from the screen | Partial | From the name plate in OCR text. Not tried inside the game |
+| NPC-004 | Read the name from the screen | Partial | Live OCR `Einar I -` selected `einar`. A card with no name plate has not been tried |
 | NPC-005 | Identification rules | Done | Plate only. A mentioned name does not match |
 | NPC-006 | Unknown speaker | Done | Unknown card and `af_bella`, unless the user overrode it |
-| NPC-007 | Per-character voice and pace | Partial | Voice edits are saved. Pace is sent to Kokoro. T1 has not compared two files |
-| NPC-008 | Tests | Partial | Kenyatta, Eshe, and Nai'o unit tests, plus the roster test that Kenyatta stays `af_sky`. No live test |
+| NPC-007 | Per-character voice and pace | Partial | Voice edits are saved. The user heard `af_bella` at `0.85` and `1.15`. They gave no quality note |
+| NPC-008 | Tests | Partial | Kenyatta, Eshe, Nai'o, and the Einar badge lines. Live test: Einar's card selected `einar`. No nameless card yet |
 
 ## 7.10 Storage
 
@@ -477,9 +493,9 @@ Speaker rules already in code:
 | DATA-002 | Create the database | Not started | |
 | DATA-003 | Store voice profiles | Partial | Roster JSON plus `voices.json`. Not SQLite |
 | DATA-004 | Store settings | Partial | `capture.json`. No general settings service |
-| DATA-005 | Audio cache | Not started | Phase 4 |
-| DATA-006 | Cache key | Not started | Must include text, voice, pace, model hash, and engine version |
-| DATA-007 | Cache cleanup | Not started | |
+| DATA-005 | Audio cache | Done | `%LOCALAPPDATA%\PaliaVoiceAI\cache\{key}.wav`. A repeated test line was not generated again |
+| DATA-006 | Cache key | Done | Text, voice, pace, model SHA-256, engine version, and `audio/wav` |
+| DATA-007 | Cache cleanup | Partial | `DeleteOlderThan` and `DeleteAll` were tested. Settings deletes every stored line. Nothing deletes files on a timer |
 | DATA-008 | Schema migration | Not started | |
 
 ## 7.11 Distribution
@@ -505,7 +521,7 @@ Speaker rules already in code:
 
 The window opens on VoiceBox. Each card is a villager. The right panel sets that card's Kokoro voice and pace, and the microphone previews it. Apply voice speaks a newly captured line with the matched card. Hear yourself only gates automatic playback; the microphone and Generate still play. Live capture toggles the monitor.
 
-Voicestudio still has backend, voice, threads, the dialogue box, Generate, Play, and Stop. Settings has the capture region, preview, and monitor.
+Voicestudio still has backend, voice, threads, the dialogue box, Generate, Play, and Stop. Settings has the capture region, preview, monitor, and **Delete stored lines**. A new line waits until the current one finishes. Stop drops every line that is still waiting.
 
 Files:
 
@@ -515,6 +531,7 @@ Files:
 | `%LOCALAPPDATA%\PaliaVoiceAI\voices.json` | User voice, pace, favorites, selected id, Apply voice, Hear yourself |
 | `%LOCALAPPDATA%\PaliaVoiceAI\npc-voices.json` | Optional newer copy of the roster |
 | `%LOCALAPPDATA%\PaliaVoiceAI\capture.json` | Region and monitor settings |
+| `%LOCALAPPDATA%\PaliaVoiceAI\cache\*.wav` | Stored lines. The file name is the cache key |
 | `%LOCALAPPDATA%\PaliaVoiceAI\benchmarks.csv` | Benchmark rows |
 | `%LOCALAPPDATA%\PaliaVoiceAI\last-capture.bmp` | Last capture |
 | `npc-voices.json` beside the exe | Shipped roster |
@@ -527,9 +544,9 @@ Limits that are still true:
 3. Mock RTF is not a TTS measurement.
 4. The model is downloaded into the user profile. It is not inside an installer.
 5. Speaker matching is proven on text, not on a live Palia window.
-6. There is no audio cache.
+6. A repeated line is stored in the cache. That reuse was tested with stand-in audio, not with a live Kokoro sentence.
 7. This build is not a distributable release.
-8. Stop does not cut Kokoro mid-sentence.
+8. Stop drops waiting lines and stops playback. It does not cut Kokoro mid-sentence. The finished call is not played if Stop already happened.
 
 ---
 
@@ -539,7 +556,7 @@ Limits that are still true:
 
 **Close when:** Kokoro speaks on CPU, CUDA is tried when the runtime can do it, and the numbers can be measured again.
 
-**2026-11-17:** CPU is closed. The sentence, voice, timings, hash, and playback are in section 7.4. CUDA fell back to CPU. Listening quality was not judged. Impact while Palia is running was not measured.
+**2026-11-17:** CPU is closed. The first sentence, voice, timings, hash, and playback are in section 7.4. A second CPU measurement ran while `PaliaClientSteam-Win64-Shipping` was running: voice `af_bella`, pace `0.85` audio 5,084 ms, pace `1.15` audio 4,086 ms. CUDA was requested again and fell back to CPU because `onnxruntime` has no `OrtSessionOptionsAppendExecutionProvider_CUDA`. The user heard the two `af_bella` pace files and did not describe them. Other voices were not heard. FPS was not measured. A reconnect notice was on the dialogue card during that run.
 
 | ID | Task | Status |
 | --- | --- | --- |
@@ -551,37 +568,39 @@ Limits that are still true:
 | P1-006 | Local `kokoro.onnx` | Done |
 | P1-007 | `KokoroTtsEngine` | Done |
 | P1-008 | CPU speech | Done |
-| P1-009 | CUDA speech | Partial. Fallback only |
-| P1-010 | One CPU measurement | Done |
-| P1-011 | Listen and compare voices | Not started |
-| P1-012 | Run beside Palia | Not started |
+| P1-009 | CUDA speech | Partial. Fallback only. The missing entry point was recorded again on 2026-11-17 |
+| P1-010 | One CPU measurement | Done. Repeated at two paces while Palia's process was running |
+| P1-011 | Listen and compare voices | Partial. The user heard the two `af_bella` pace files. Other English voices were not compared by ear |
+| P1-012 | Run beside Palia | Partial. Generation ran while the game process was open. FPS was not measured |
 
 ## Phase 2 — OCR and capture
 
 **Close when:** A new dialogue line is captured once, and the same text is not sent to TTS again inside the duplicate window.
 
-**2026-11-17:** Stability, cleanup, and duplicate logic are unit-tested. Windows OCR read drawn English text. A small GDI capture worked. The Palia window itself was not captured, so this phase is not closed.
+**2026-11-17:** Stability, cleanup, and duplicate logic are unit-tested. Windows OCR read drawn English text. A small GDI capture worked. The live Palia window was captured later the same day: process `PaliaClientSteam-Win64-Shipping`, client 1536×960, region `105,550` `780×350`, and one Einar line was spoken once. The same line did not return inside the duplicate window, so this phase is not closed. Window capture had to ask combase for the graphics-capture factory. The CsWinRT wrapper could not be cast to that COM interface.
 
 ## Phase 3 — NPC voice profiles
 
 **Close when:** Known dialogue selects that villager's profile, and an unidentified speaker has an obvious fallback.
 
-**2026-11-17:** The text side of that close is in place and unit-tested. Unknown is the fallback. The window can change the voice. Pace is wired and not compared (T1). Live selection is T2. Mapping-file voice suggestions were not applied.
+**2026-11-17:** The text side of that close is in place and unit-tested. Unknown is the fallback. The window can change the voice. Pace was compared (T1): `af_bella` at `0.85` is 5,084 ms and at `1.15` is 4,086 ms. Live selection: Einar's plate selected `einar` (see T2). A card with no name plate has not been captured. Mapping-file voice suggestions were not applied.
 
 Work items inside the phase:
 
 - NPC model, profile, roster file, stable voice id, UI editing, and Unknown: done.
-- Speed: wired, waiting on T1.
+- Speed: compared. Voice `af_bella`, line `Hello! Welcome to Kilima Village. How can I help you today?` Pace `0.85` was 5,084 ms. Pace `1.15` was 4,086 ms. Files are `%LOCALAPPDATA%\PaliaVoiceAI\phase1\bella-pace-085.wav` and `bella-pace-115.wav`. The user heard both on 2026-11-17 and did not describe the sound.
 - Pitch: not supported by this Kokoro call. Do not fake it.
 
 ## Phase 4 — Queue and cache
 
 - One speaker at a time.
-- A clear rule for an old line when a new line arrives.
-- Stop, and pause or resume only if a task asks for them.
-- A stable cache key and a place to delete old files.
+- A new line waits. Stop drops every line that is still waiting. Pause and resume were not added.
+- Cache key: trimmed text, voice id, pace to two decimals, model SHA-256, engine version `KokoroSharp 0.8.4`, content type `audio/wav`.
+- Stored files are `%LOCALAPPDATA%\PaliaVoiceAI\cache\{key}.wav`. Settings deletes them. `DeleteOlderThan` is available and is not on a timer.
 
 **Close when:** Speech does not overlap, and a stored line is not generated again when the text, voice, pace, and model match.
+
+**2026-11-17:** The user skipped the remaining live checks and said to start this phase. Core tests observed the close: the second line did not generate or play until the first playback finished, playback concurrency stayed at 1, and the same text, voice `bm_lewis`, pace `1.00`, and model hash was `FromCache` on the second delivery. Pace `0.85` generated again. Stop cancelled the playing line and the waiting line. Kokoro was not asked to replay a stored line, and Palia was not running. Types: `SpeechQueue`, `SpeechCache`, `SpeechIdentity`, `SpeechCacheKey`, `ModelFileHash`, `AudioPlayer.PlayAsync`.
 
 ## Phase 5 — Settings and reliability
 
@@ -655,9 +674,9 @@ Screen capture
   -> Drop a duplicate
   -> Name-plate match, else Unknown
   -> Voice and pace from the roster, then the user override
-  -> Cache lookup          (not built)
+  -> Cache lookup
   -> Kokoro if there was no cache hit
-  -> Queue                 (not built)
+  -> Wait until the current line has finished playing
   -> Play
 ```
 
@@ -666,7 +685,8 @@ Rules:
 - Do not send every captured frame to TTS.
 - Wait for the stable-read count before treating a line as new.
 - Remove duplicates inside the duplicate window.
-- A future cache key needs the normalized text, voice id, pace, model hash, output format, and engine version. The text alone is not enough.
+- The cache key is the trimmed text, voice id, pace, model hash, engine version, and `audio/wav`. The text alone is not enough.
+- A new line waits. It does not start until the current line has finished playing.
 - Do not use an LLM to guess the speaker when the name plate is missing.
 - If the speaker is unclear, use Unknown. Do not assign a random voice.
 - Keep the spoken line separate from the name plate and from UI prompts.
@@ -701,7 +721,7 @@ Rules:
 | R-009 | Other PCs differ | CPU must work. GPU stays optional |
 | R-010 | Game terms | Review before distribution |
 | R-011 | Redistribution rights | Finish TTS-015 and ship notices |
-| R-012 | Long lines feel late | Queue and cache come after a listening check, not before |
+| R-012 | Long lines feel late | The queue waits, so a fast conversation can lag behind the card. The cache skips a repeated line. Neither was measured on a long Kokoro line |
 
 Still undecided:
 
@@ -728,9 +748,9 @@ Still undecided:
 | The same line is not read again for no reason | Logic tested. Live use not done |
 | Known dialogue selects the right profile | Text fixtures only |
 | Each villager has a profile | Done. Six villagers have no voice id yet |
-| Speech does not overlap | Not done |
-| Stop cuts the current audio | Playback yes. Mid-synthesis no |
-| Cache works | Not done |
+| Speech does not overlap | Queue tested. A new line waits. Not heard against live Kokoro |
+| Stop cuts the current audio | Playback yes. Waiting lines are dropped. Mid-synthesis Kokoro still finishes and is not played if Stop already happened |
+| Cache works | Tested with stand-in audio. A live Kokoro replay was not measured |
 | FPS gates | Not measured |
 | Another PC can install it | Not done |
 | Licenses reviewed for distribution | Not done |
@@ -747,6 +767,11 @@ Still undecided:
 | 2026-11-17 | Kokoro CPU speech. First run downloaded the model. After that, 1,598 ms generation, 4,510 ms audio, RTF 0.354, voice `af_bella`. CUDA fell back to CPU. |
 | 2026-11-17 | Phase 3 voice library. Name-plate matching tested on text. Then the roster moved to `npc-voices.json` with 28 wiki icons. Existing voice ids were kept. 29 tests passed. Taylin has no wiki icon. Portrait pixels were not reviewed by eye. |
 | 2026-11-17 | This document was rewritten in English. Stale rows that called finished CPU speech, voice profiles, and playback "not started" were aligned with the checks above. Open work is T1, T2, T3, then T4. |
+| 2026-11-17 | Live Palia capture. Window `PaliaClientSteam-Win64-Shipping`, region `105,550` `780×350`. Einar's line was spoken once with `bm_lewis` (2,905 ms generation, 5,494 ms audio). The duplicate and a nameless card were not captured. Name plates now ignore friendship-badge OCR. 32 tests passed. |
+| 2026-11-17 | Pace check. `af_bella` at `0.85` was 5,084 ms and at `1.15` was 4,086 ms. CUDA fell back to CPU again. The Palia process was running. Listening and FPS were not confirmed. |
+| 2026-11-17 | The user heard the two `af_bella` pace files. They did not describe the sound. Other voices and FPS remain unconfirmed. |
+| 2026-11-17 | The user cannot perform the remaining in-game checks. The duplicate line and a nameless card stay open. |
+| 2026-11-17 | The user said to skip T2 and T3 and start Phase 4. `SpeechQueue` waits. The same text, voice, pace, and model was not generated again. Stop drops a waiting line. Cache files are in `%LOCALAPPDATA%\PaliaVoiceAI\cache`. 40 tests passed (Core 37, OCR 3). Release build had 0 warnings. Kokoro cache replay and Palia were not part of this check. |
 
 ---
 

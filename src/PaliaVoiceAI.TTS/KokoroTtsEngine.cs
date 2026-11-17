@@ -9,6 +9,7 @@ namespace PaliaVoiceAI.TTS;
 public sealed class KokoroTtsEngine : ITtsEngine
 {
     public const string EngineName = "Kokoro 82M";
+    public const string EngineVersion = "KokoroSharp 0.8.4";
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private KokoroWavSynthesizer? _synth;

@@ -13,4 +13,5 @@ public static class AppPaths
     public static string KokoroOnnx => Path.Combine(ModelsDirectory, "kokoro.onnx");
     public static string VoiceProfiles => Path.Combine(Root, "voices.json");
     public static string NpcVoices => Path.Combine(Root, "npc-voices.json");
+    public static string SpeechCache => Path.Combine(Root, "cache");
 }

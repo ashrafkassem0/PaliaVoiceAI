@@ -295,6 +295,11 @@
                         <Image x:Name="PreviewImage" Stretch="Uniform"/>
                     </Border>
                     <TextBox x:Name="OcrPreviewText" Margin="0,10,0,0" MinHeight="72" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Text="OCR text appears here."/>
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button x:Name="ClearCacheButton" Style="{StaticResource QuietButton}" Content="Delete stored lines" Click="ClearCache_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="CacheStatus" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#9B94B8"
+                               Text="A new line waits until the current one finishes. A repeat with the same voice, pace, and model plays from %LOCALAPPDATA%\PaliaVoiceAI\cache."/>
                     <TextBlock x:Name="CaptureStatus" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#C9C3E0"
                                Text="Use Preview to tune the region. The saved image is last-capture.bmp in %LOCALAPPDATA%\PaliaVoiceAI."/>
                 </StackPanel>
