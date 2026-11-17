@@ -1,1428 +1,764 @@
-# Palia Voice AI --- وثيقة المشروع الرئيسية
-
-**الإصدار:** 0.1 --- وثيقة تأسيسية\
-**تاريخ التحديث:** 17 نوفمبر 2026\
-**حالة المشروع العامة:** قيد التطوير --- Phase 1: كلام Kokoro على CPU متحقق؛ Phase 2 دون اختبار Palia الحي؛ Phase 3: مكتبة أصوات NPC في الواجهة، والتعرف على الاسم متحقق على النص لا داخل اللعبة\
-**نوع التطبيق:** Windows Desktop Application\
-**التقنيات المستهدفة:** C#، .NET 8، WPF، ONNX Runtime، Kokoro TTS،
-NAudio\
-**الجهاز المرجعي للاختبار:** ASUS ROG Strix G16 G614PH-RV161W
-
-> هذه الوثيقة هي مرجع المشروع (Project Source of Truth). توضح الهدف،
-> النطاق، المعمارية، القرارات، المهام، وحالة التنفيذ. لا تعتبر المهمة
-> منفذة لمجرد أنها مخططة أو موصوفة هنا. الحالة «منفذ جزئياً» تعني وجود
-> جزء أولي أو هيكل برمجي غير مكتمل. والحالة «غير متحقق» تعني أن التنفيذ
-> أو التوافق لم يجر اختباره عملياً.
-
-------------------------------------------------------------------------
-
-# 1. ملخص المشروع
-
-يهدف **Palia Voice AI** إلى إنشاء برنامج Windows مستقل يضيف أصواتاً مولدة
-بالذكاء الاصطناعي إلى حوارات شخصيات NPC في لعبة Palia.
-
-الفكرة التشغيلية المستهدفة:
-
-1.  يلتقط البرنامج منطقة الحوار الظاهرة على الشاشة.
-2.  يستخرج النص باستخدام OCR.
-3.  يحدد ما إذا كان النص جديداً أو مكرراً.
-4.  يحدد الشخصية المرتبطة بالحوار، اعتماداً على المعلومات المرئية
-    والقواعد التي سنبنيها.
-5.  يختار Voice Profile ثابتاً للشخصية.
-6.  يرسل النص إلى محرك TTS محلي.
-7.  يستقبل الصوت ويضعه في Audio Queue.
-8.  يشغل الصوت عبر جهاز الصوت في Windows دون تعطيل اللعبة.
-9.  يخزن نتائج التوليد المناسبة في Cache لتقليل إعادة التوليد.
-
-## 1.1 مبادئ المشروع
-
--   **Local-first:** الهدف أن تتم عملية توليد الصوت محلياً بعد تنزيل
-    ملفات النموذج والاعتماديات اللازمة.
--   **Game-safe approach:** قراءة الحوار من الشاشة فقط، دون تعديل ملفات
-    اللعبة أو قراءة ذاكرتها أو حقن كود داخلها.
--   **Non-invasive:** لا يحاول البرنامج التحكم في منطق اللعبة أو تنفيذ
-    أوامر داخلها.
--   **Modular:** فصل OCR وTTS والصوت والواجهة حتى يمكن تغيير أحدها دون
-    إعادة كتابة بقية التطبيق.
--   **Performance-aware:** الحفاظ على سلاسة Palia أولوية مساوية لسرعة
-    توليد الصوت.
--   **Distribution-ready design:** تصميم يسمح بإنتاج Installer لاحقاً، مع
-    جعل CUDA اختيارية ودعم CPU.
--   **No unsupported voice claims:** الأصوات المختارة هي أصوات TTS متاحة
-    ومرخصة، وليست استنساخاً لأصوات ممثلي اللعبة أو ادعاءً بأنها أصوات
-    الشخصيات الأصلية.
-
-## 1.2 ما ليس ضمن الإصدار الأول
-
--   لا يوجد تعديل أو استبدال لملفات الصوت الأصلية داخل Palia.
--   لا يوجد حقن DLL أو تعديل ذاكرة اللعبة.
--   لا يوجد Voice Cloning لممثلي الأداء الصوتي.
--   لا يوجد اتصال بخدمات Cloud TTS أثناء التشغيل المستهدف.
--   لكل NPC ملف صوت يمكن تغييره من VoiceBox. التعرف على الاسم من نص بطاقة الحوار مغطى باختبار، ولم يُجرَ على Palia وهي تعمل.
--   Kokoro 82M يعمل على CPU. إذا لم يوجد `kokoro.onnx` يُنزَّل مرة واحدة
-    إلى `%LOCALAPPDATA%\PaliaVoiceAI\models`. طلب CUDA على هذه الحزمة
-    يرجع إلى CPU لأن `onnxruntime.dll` لا يحتوي مزود CUDA. Mock ما زال
-    متاحاً كاختبار صامت للمسار.
--   OCR والتقاط الشاشة موجودان. اختبارهما داخل Palia نفسها لم يُنفَّذ بعد.
-
-------------------------------------------------------------------------
-
-# 2. بيانات الجهاز المرجعي
-
-المواصفات التي قدمها المستخدم:
-
-  المكوّن                       المواصفات
-  ---------------------------- -------------------------------------------------
-  الجهاز                       ASUS ROG Strix G16
-  رقم الموديل                  G614PH-RV161W
-  المعالج                      AMD Ryzen 9 8940HX
-  بطاقة الرسوميات              NVIDIA GeForce RTX 5050 Laptop GPU
-  ذاكرة GPU                    8GB
-  RAM                          32GB DDR5-5200
-  التخزين                      1TB PCIe 4.0 NVMe
-  الشاشة                       16 بوصة، 1920×1200 WUXGA، 165Hz، 100% sRGB
-  نظام التشغيل                 Windows 11
-  دقة تشغيل اللعبة المستهدفة   1920×1200 (WUXGA)
-  أولوية الأداء                Balanced --- توازن بين سلاسة اللعبة وسرعة الصوت
-
-**ملاحظة:** الدقة الفعلية المذكورة في مواصفات الجهاز هي 1920×1200، وليست
-1920×1080. يجب أن يستخدم اختبار الأداء دقة اللعبة الفعلية التي يختارها
-المستخدم، وأن يسجلها ضمن بيانات كل Benchmark.
-
-## 2.1 سياسة موارد الجهاز
-
-لا نفترض أن استخدام GPU أسرع دائماً أو أنه أفضل أثناء اللعب. يجب مقارنة
-CPU وCUDA في ظروف تشغيل Palia الفعلية.
-
-القرار المبدئي: - الاحتفاظ بمسار CPU كمسار تشغيل أساسي مضمون. - اختبار
-CUDA على RTX 5050. - عدم تفعيل CUDA افتراضياً قبل قياس أثرها على FPS و1%
-Low وVRAM. - عدم تخصيص ميزانية GPU ثابتة نهائية قبل اختبار النموذج
-وإصدار ONNX Runtime. - منع التوليد المتزامن غير المحدود؛ البداية بتوليد
-واحد في الوقت نفسه. - تخزين الصوت الناتج في Cache متى كان ذلك آمناً
-ومناسباً.
+# Palia Voice AI — Project master
 
-------------------------------------------------------------------------
+**Version:** 0.2 — English working copy  
+**Updated:** 2026-11-17  
+**App:** Windows desktop  
+**Stack:** C# / .NET 8 / WPF / ONNX Runtime / Kokoro TTS / NAudio  
+**Reference PC:** ASUS ROG Strix G16 G614PH-RV161W
 
-# 3. أهداف المنتج ومتطلبات القبول
+This file is the source of truth. A task is not done because it is described here. Update the status only after the behavior was checked, and write what the check showed.
 
-## 3.1 المتطلبات الوظيفية
+## How to execute work from this file
 
-  -----------------------------------------------------------------------
-  ID                      المتطلب                 معيار القبول
-  ----------------------- ----------------------- -----------------------
-  FR-001                  إدخال نص إنجليزي يدوياً  يمكن كتابة نص وإرساله
-                                                  إلى محرك TTS
+1. Read **Current snapshot** and **Next tasks**. Do the first task that is not blocked.
+2. Stay inside the task's **Done when** line. Do not start the next phase while the current close condition is still open, unless the user says to.
+3. After the check, change that task's status, name the files, and add one changelog row. Record the result (counts, timings, the exact text), not only that a command ran.
+4. `dotnet restore` or a successful NuGet install is not proof that a feature works.
+5. Do not mark live in-game behavior done unless Palia was actually running.
 
-  FR-002                  اختيار Voice ID         اختيار صوت من قائمة
-                                                  الأصوات المتاحة
+### Hard rules
 
-  FR-003                  توليد صوت محلي          إنتاج ملف صوتي قابل
-                                                  للتشغيل دون Cloud API
+- Read the game from the screen only. Do not read Palia's memory, inject a DLL, or change game files.
+- No cloud TTS. CPU is the path that must keep working. Do not install CUDA Toolkit or cuDNN until the GPU package versions are pinned in this file. If CUDA is requested and the provider is missing, fall back to CPU and say so.
+- Do not claim a Kokoro voice is the original actor.
+- Do not replace `voiceId` values from `PaliaVoiceAI-NPC-Voice-Mapping.md`. That file is a recommendation. The live assignments are in `npc-voices.json`.
+- Do not invent a child voice. Villagers with an empty `voiceId` stay unassigned until the user sets one.
+- Shell is PowerShell. Do not chain commands with `&&`. Use `; if ($LASTEXITCODE -eq 0)`.
+- If the Release exe is locked, close `PaliaVoiceAI.App` with `WM_CLOSE` (`0x0010`) before rebuilding. Do not force-kill it when the close message works.
+- Do not commit unless the user asks.
 
-  FR-004                  تشغيل الصوت             تشغيل الصوت وإيقافه من
-                                                  الواجهة
+### Commands
 
-  FR-005                  اختيار Backend          اختيار CPU أو CUDA
-                                                  عندما يكونان متاحين
+```powershell
+dotnet test .\PaliaVoiceAI.sln --nologo
+dotnet build .\src\PaliaVoiceAI.App\PaliaVoiceAI.App.csproj -c Release --nologo
+```
 
-  FR-006                  OCR للحوار              استخراج نص الحوار
-                                                  الظاهر بدقة مقبولة
+Last full check on 2026-11-17: 29 tests passed (Core 26, OCR 3). Release build of the app succeeded with 0 warnings. The voice-library window listed Kenyatta, Eshe, Auni, Taylin, The Gardener, Ulfe, and Unassigned. The portrait pixels inside that window were not looked at.
 
-  FR-007                  منع تكرار الحوار        عدم توليد الصوت مجدداً
-                                                  للنص نفسه خلال نافذة
-                                                  التكرار المحددة
+---
 
-  FR-008                  تحديد NPC               ربط الحوار بالشخصية
-                                                  الصحيحة أو طلب تدخل
-                                                  المستخدم عند الغموض
+# Current snapshot
 
-  FR-009                  Voice Profiles          حفظ صوت وإعدادات مستقلة
-                                                  لكل NPC
+| Phase | Close condition | State |
+| --- | --- | --- |
+| 1. Kokoro speech | Real local speech on CPU, then CUDA if it is available, with a repeatable measurement | CPU is closed. CUDA is not available on the installed ONNX package and falls back to CPU. Listening quality and "while Palia is running" were not measured. |
+| 2. OCR and capture | Read a new dialogue line once, and do not read the same line again | Logic is tested. Live Palia capture is not. |
+| 3. NPC voices | Pick the right voice profile for known dialogue, and do something clear when the speaker is unknown | Name-plate matching is unit-tested. The window can change and save a voice. Pace is sent to Kokoro and has not been heard. Live detection inside Palia is not done. |
+| 4. Queue and cache | No overlapping speech, and no second generation when text, voice, and settings match | Not started. |
+| 5. Settings and reliability | Settings, logging, and a long play session | Not started, except the capture settings that already save. |
+| 6. Installer | Another Windows PC can install and remove it | Not started. |
 
-  FR-010                  Audio Queue             تنظيم الحوارات ومنع
-                                                  تداخل الأصوات
+**Do this next:** task T1 below. It is the remaining Phase 3 check that does not need the game.
 
-  FR-011                  إيقاف فوري              إيقاف الصوت الحالي ومسح
-                                                  أو إلغاء العناصر حسب
-                                                  سياسة الإيقاف
+---
 
-  FR-012                  Audio Cache             إعادة استخدام الصوت
-                                                  المخزن عند تطابق النص
-                                                  والصوت والإعدادات
+# Next tasks
 
-  FR-013                  Benchmark               تسجيل زمن التوليد ومدة
-                                                  الصوت وRTF والـBackend
+## T1 — Prove pace changes the audio
 
-  FR-014                  إعدادات المستخدم        حفظ الإعدادات محلياً
-                                                  واستعادتها عند تشغيل
-                                                  البرنامج
+**Status:** Partial. The slider saves a pace and `KokoroTtsEngine` passes `KokoroTTSPipelineConfig.Speed`. Nobody has compared two files.
 
-  FR-015                  اكتشاف اللعبة           اكتشاف تشغيل Palia أو
-                                                  السماح للمستخدم ببدء
-                                                  الالتقاط يدوياً
+**Done when:** The same line and the same voice are generated at pace `0.85` and `1.15`. The slower pace produces a longer WAV. Write both durations and the voice id in the Phase 3 status. Do not write that someone listened unless they did.
 
-  FR-016                  إعداد منطقة الالتقاط    تحديد منطقة الحوار على
-                                                  الشاشة أو استخدام إعداد
-                                                  محفوظ
+**Where:** `src/PaliaVoiceAI.TTS/KokoroTtsEngine.cs` (`Speed` only; there is no pitch control). The UI slider is `0.85`–`1.15`. The engine clamps to `0.7`–`1.4`.
 
-  FR-017                  وضع عدم الإزعاج         تعطيل OCR أو الصوت
-                                                  مؤقتاً دون إغلاق التطبيق
-  -----------------------------------------------------------------------
+**Kokoro has no pitch setting in this integration.** Do not add a fake pitch control. The Phase 3 line "speed and pitch if the engine supports them" is satisfied by speed. Pitch stays unsupported.
 
-## 3.2 المتطلبات غير الوظيفية
+## T2 — Live speaker check
 
-  -----------------------------------------------------------------------
-  ID                      المتطلب                 معيار القبول المقترح
-  ----------------------- ----------------------- -----------------------
-  NFR-001                 عدم التأثير الملحوظ على متوسط FPS لا ينخفض
-                          اللعبة                  بأكثر من 5% في سيناريو
-                                                  القبول
+**Status:** Blocked until Palia is running.
 
-  NFR-002                 الحفاظ على 1% Low       لا ينخفض بأكثر من 10%
-                                                  في سيناريو القبول
+**Done when:** A real dialogue card whose first plate is a known name selects that villager. A card with no name plate selects Unknown. A name that only appears inside a sentence does not select that villager. Paste the OCR text into the Phase 3 status.
 
-  NFR-003                 استجابة الصوت           قياس First Audio
-                                                  Latency؛ الهدف المبدئي
-                                                  أقل من ثانية قدر
-                                                  الإمكان
+**Where:** `SpeakerIdentifier.FindNpcId` in `src/PaliaVoiceAI.Core/Npc/NpcProfiles.cs`, called from `MainWindow.Capture.cs`.
 
-  NFR-004                 الاستقرار               اختبار لعب متواصل دون
-                                                  تسرب ذاكرة أو توقف
-                                                  التطبيق
+## T3 — Live OCR close for Phase 2
 
-  NFR-005                 الخصوصية                لا ترسل لقطات الشاشة أو
-                                                  نصوص الحوار إلى خوادم
-                                                  خارجية
+**Status:** Blocked until Palia is running.
 
-  NFR-006                 قابلية التوزيع          توفير Installer وملفات
-                                                  اعتماديات موثقة
+**Done when:** The game window is found, the dialogue region contains the card, one new line is spoken or copied once, and the same line is suppressed inside the duplicate window. Record the process name, the region, and the text.
 
-  NFR-007                 قابلية الاستبدال        يمكن إضافة محرك TTS آخر
-                                                  دون تغيير Core
+**Start from:** on a 1920×1200 frame, region `x=131, y=688, width=975, height=438`. That came from the Kenyatta screenshot (1024×576 crop at 70,330 size 520×210). Display scaling on this PC was 125% (a 1280×820 window was about 1600×1025 physical pixels). Re-check the region against the live window; do not assume the numbers still match.
 
-  NFR-008                 التعامل مع الأخطاء      فشل OCR أو TTS لا يؤدي
-                                                  إلى إغلاق التطبيق
+**Expected cleaned line from that fixture, including the spelling:** `I'd wish you a hoppu Luna New Year, but I'm so ready for it to be over already.`
 
-  NFR-009                 قابلية الإلغاء          إلغاء توليد النص القديم
-                                                  عند انتقال الحوار وفق
-                                                  سياسة واضحة
+## T4 — Phase 4 queue
 
-  NFR-010                 قابلية الرصد            تسجيل أخطاء وقياسات
-                                                  الأداء دون تسجيل بيانات
-                                                  غير ضرورية
-  -----------------------------------------------------------------------
+**Status:** Not started. Begin only after T1 is recorded, or when the user says to skip T1.
 
-**الأهداف الرقمية أعلاه مقترحات قبول أولية وليست نتائج Benchmark فعلية
-أو ضمانات أداء.**
+**Done when:** A new line cancels or waits on the previous one with no overlap, and a repeated line with the same voice, pace, and model is not generated again.
 
-------------------------------------------------------------------------
+---
 
-# 4. القرارات التقنية المعتمدة
+# 1. What the program is
 
-## 4.1 لغة البرمجة والمنصة
+Palia Voice AI is a separate Windows program. It reads an NPC dialogue card from the screen and speaks it with a local voice.
 
-  -----------------------------------------------------------------------
-  القرار                  الاختيار                السبب
-  ----------------------- ----------------------- -----------------------
-  اللغة                   C#                      مناسبة لخبرة المشروع،
-                                                  وتكامل Windows
+Target loop:
 
-  Framework               .NET 8                  إطار التطبيق المستهدف
-
-  UI                      WPF                     تطبيق Windows Desktop
-
-  Architecture            Modular layered         فصل المسؤوليات
-                          solution                
-
-  Audio                   NAudio                  تشغيل وإدارة الصوت
-
-  TTS مبدئي               Kokoro 82M              نموذج محلي صغير نسبياً
-                                                  ومتعدد الأصوات
-
-  TTS Integration         KokoroSharp             مسار تكامل C# قيد
-                                                  التحقق
-
-  Inference Runtime       ONNX Runtime            تشغيل النموذج محلياً مع
-                                                  CPU/GPU Providers
-
-  OCR                     Windows OCR كبداية      تقليل الاعتماديات في
-                          للاختبار                النموذج الأولي
-
-  Cache/Metadata          SQLite                  تخزين محلي منظم
-
-  User Settings           JSON أو .NET Settings   إعدادات بسيطة قابلة
-                                                  للنقل والترحيل
-
-  Packaging               Windows Installer لاحقاً توزيع التطبيق بعد
-                                                  اكتمال الوظائف
-  -----------------------------------------------------------------------
-
-## 4.2 قرار Python
-
-**لا نضيف Python في Phase 1.**
-
-يظل C# مسؤولاً عن: - واجهة المستخدم. - التقاط الشاشة. - تنظيم الحوار. -
-إدارة ملفات الشخصيات. - إدارة Audio Queue. - التخزين المؤقت. - تشغيل
-التطبيق وتوزيعه.
-
-يعاد تقييم Python فقط إذا أثبت Benchmark أو متطلبات نموذج TTS آخر أن
-استخدام Python ضروري أو يقدم فائدة واضحة تستحق تعقيد تشغيل عملية خارجية.
-
-## 4.3 قرار محرك TTS
-
-المرشح الأول هو Kokoro 82M، لكن اختياره النهائي للإصدار القابل للتوزيع
-مشروط باختبارات: - جودة النطق الإنجليزي. - طبيعية الإلقاء. - زمن
-التوليد. - دعم الأصوات المطلوبة. - استقرار مكتبة KokoroSharp. - توافق
-ONNX Runtime وCUDA. - التراخيص وشروط إعادة توزيع ملفات النموذج والأصوات.
-
-لا يعتبر وجود مكتبة NuGet دليلاً وحده على أن تكاملها النهائي جاهز أو أن
-كل مسارات GPU تعمل على الجهاز المستهدف.
-
-## 4.4 سياسة CUDA
-
--   CPU يجب أن يبقى متاحاً كمسار أساسي.
--   CUDA مسار اختياري لأجهزة NVIDIA المتوافقة.
--   لا يتم تثبيت CUDA Toolkit أو cuDNN يدوياً قبل تثبيت إصدارات الحزم
-    وتوثيق متطلباتها.
--   يجب التحقق من توافق نسخة KokoroSharp مع نسخة ONNX Runtime GPU وCUDA
-    وcuDNN.
--   لا يتم افتراض أن DirectML وCUDA قابلان للتبديل دون اختبار.
--   يجب توثيق الملفات الأصلية المطلوبة للتشغيل، ومصدرها وترخيصها، في
-    Installer لاحقاً.
-
-------------------------------------------------------------------------
-
-# 5. إعدادات Benchmark الأولية
-
-هذه قيم بدء للاختبار وليست إعدادات نهائية مثبتة.
-
-  الإعداد                                قيمة البداية الحالة
-  --------------------------- ----------------------- ------------------
-  CPU IntraOp Threads                               3 مقترح، غير مختبر
-  CPU InterOp Threads                               1 مقترح، غير مختبر
-  Execution Mode                           Sequential مقترح، غير مختبر
-  Graph Optimization                   ORT_ENABLE_ALL مقترح، غير مختبر
-  Max Concurrent TTS                                1 قرار تصميمي أولي
-  Audio Queue                   عنصر واحد قيد التوليد قرار تصميمي أولي
-  CUDA Memory Arena              1GB كنقطة اختبار فقط غير متحقق
-  OCR Polling Interval              يحدد بعد قياس OCR لم يحدد
-  Duplicate Dialogue Window     يحدد بعد تجربة اللعبة لم يحدد
-
-**تنبيه:** حد CUDA Memory Arena ليس حداً مضموناً لإجمالي VRAM التي قد
-يستهلكها التطبيق. يجب قياس إجمالي استهلاك GPU الفعلي.
-
-------------------------------------------------------------------------
-
-# 6. المعمارية المستهدفة
-
-``` text
+1. Capture the dialogue area.
+2. Read it with OCR.
+3. Keep the line only after the text has stopped changing, and drop a duplicate.
+4. If the name plate is a known villager, use that profile. Otherwise use Unknown.
+5. Speak it with local Kokoro, one generation at a time.
+6. Play the WAV without touching the game.
+7. Later, reuse a stored WAV when the line and the settings match. That cache does not exist yet.
+
+## 1.1 Principles
+
+- **Local-first.** Speech is generated on this PC after the model files are downloaded.
+- **Game-safe.** Screen reading only.
+- **Modular.** Capture, OCR, TTS, audio, and UI are separate projects.
+- **Performance-aware.** Keeping Palia smooth matters as much as fast speech. This has not been measured with the game running.
+- **CPU always works.** CUDA is optional.
+- **No false voice claims.** These are licensed TTS voices, not the game's actors.
+
+## 1.2 Not in the first release
+
+- No replacement of Palia's own audio files.
+- No DLL injection and no memory reads.
+- No voice cloning.
+- No cloud TTS during the intended run.
+- CUDA speech on this machine. The request falls back to CPU.
+- A finished installer.
+- SQLite. Profiles and settings are JSON files today.
+
+---
+
+# 2. Reference PC
+
+| Item | Value |
+| --- | --- |
+| Machine | ASUS ROG Strix G16 |
+| Model | G614PH-RV161W |
+| CPU | AMD Ryzen 9 8940HX |
+| GPU | NVIDIA GeForce RTX 5050 Laptop, 8GB |
+| RAM | 32GB DDR5-5200 |
+| Disk | 1TB PCIe 4.0 NVMe |
+| Panel | 16 in, 1920×1200, 165Hz |
+| OS | Windows 11, build 10.0.26300 |
+| SDK seen on 2026-11-17 | .NET SDK 10.0.404, building `net8.0` |
+| Performance priority | Balanced: game smoothness and speech speed together |
+
+The panel is 1920×1200, not 1920×1080. Any FPS benchmark must record the resolution the user actually plays at.
+
+## 2.1 Resource policy
+
+- CPU is the guaranteed path.
+- CUDA may be tried on the RTX 5050 only after the package versions are written down here.
+- Do not turn CUDA on by default before FPS, 1% low, and VRAM are measured.
+- One TTS generation at a time until a queue exists.
+- Cache audio only when the cache key includes every setting that changes the sound.
+
+---
+
+# 3. Acceptance
+
+## 3.1 Functional
+
+| ID | Requirement | Acceptance | Now |
+| --- | --- | --- | --- |
+| FR-001 | Type English text | A typed line can be sent to TTS | Done in Voicestudio |
+| FR-002 | Choose a voice | Pick from the Kokoro English list | Done |
+| FR-003 | Local speech | A playable WAV with no cloud API | Done on CPU |
+| FR-004 | Play and stop | Play the WAV; stop playback | Play is done. Stop stops playback and a download. An in-flight Kokoro call runs until the sentence ends |
+| FR-005 | Choose a backend | CPU or CUDA when both exist | CPU works. CUDA falls back to CPU. Mock stays silent |
+| FR-006 | OCR the dialogue | Acceptable text from the card | Tested on a drawn image and the Kenyatta fixture. Not tested on the live game |
+| FR-007 | Skip duplicates | Do not generate the same text again inside the duplicate window | Unit-tested. Default window 8 seconds. Not tested live |
+| FR-008 | Identify the NPC | Match the speaker, or make the unknown case obvious | Name plate only. Unit-tested |
+| FR-009 | Voice profiles | Each NPC keeps its own voice and pace | Roster in `npc-voices.json`. User overrides in `voices.json` |
+| FR-010 | Audio queue | Order lines and do not overlap them | Not started |
+| FR-011 | Stop now | Stop playback and cancel queued work | Partial. See FR-004 |
+| FR-012 | Audio cache | Reuse audio when text, voice, and settings match | Not started |
+| FR-013 | Benchmark | Record generation time, audio length, RTF, and backend | One CPU row exists. The CSV is reloaded |
+| FR-014 | Remember settings | Restore local settings on launch | Capture settings, voice overrides, and the model path do this |
+| FR-015 | Find the game | Detect Palia or let the user capture manually | Detector is tested against process-name rules. A running game was not checked |
+| FR-016 | Set the capture region | Use a chosen region or a saved one | Saved in `capture.json`. Needs a live check |
+| FR-017 | Do-not-disturb | Turn OCR or speech off without exiting | Live capture and Apply voice can be switched off |
+
+## 3.2 Non-functional
+
+These numbers are proposed gates. They are not measured results.
+
+| ID | Requirement | Proposed gate |
+| --- | --- | --- |
+| NFR-001 | Game FPS | Average FPS drop of 5% or less in the acceptance scene |
+| NFR-002 | 1% low | Drop of 10% or less |
+| NFR-003 | Time to first audio | Measure it. Aim for under one second when that is possible |
+| NFR-004 | Stability | A long play session with no crash and no unbounded memory growth |
+| NFR-005 | Privacy | Do not send screenshots or dialogue text to an external server |
+| NFR-006 | Distribution | An installer and written dependency list |
+| NFR-007 | Replaceable TTS | Another engine can be added behind `ITtsEngine` without rewriting Core |
+| NFR-008 | Errors | An OCR or TTS failure does not close the app |
+| NFR-009 | Cancel | An old line can be dropped when the dialogue moves on |
+| NFR-010 | Logs | Errors and timings, without storing extra personal data |
+
+---
+
+# 4. Technical decisions
+
+| Decision | Choice | Why |
+| --- | --- | --- |
+| Language | C# | Windows integration |
+| Framework | .NET 8 | Target runtime. SDK 10 can build it |
+| UI | WPF | Desktop app |
+| Shape | Several projects in one solution | Swap one layer without rewriting the others |
+| Audio | NAudio 2.2.1 | Play WAV data |
+| TTS | Kokoro 82M float32 | Small local multi-voice model |
+| TTS library | KokoroSharp 0.8.4 and KokoroSharp.CPU 0.8.4 | The CPU package omits voice assets, so the app also references KokoroSharp and copies `voices\*.npy` |
+| Runtime | Microsoft.ML.OnnxRuntime 1.22.0 | Comes with the CPU package |
+| OCR | Windows OCR, English | Fewer extra dependencies for the first version |
+| Profiles and settings | JSON files | Already in use. SQLite was only a later idea |
+| Packaging | A Windows installer later | After the features exist |
+
+## 4.1 No Python in the current app
+
+C# owns the window, capture, dialogue rules, profiles, playback, and startup. Reconsider Python only if a measured benchmark shows that another TTS model needs it.
+
+## 4.2 Kokoro is the engine in use, not a finished product choice
+
+It has produced one measured CPU sentence. Still open before a public build: listening quality, the other English voices, long lines, ONNX GPU compatibility, and a license pass for redistribution.
+
+A restored NuGet package does not mean the GPU path works.
+
+## 4.3 CUDA policy
+
+- CPU stays available.
+- CUDA is optional and off unless the user chooses it.
+- Do not install CUDA or cuDNN by hand before the versions are written in this file.
+- Do not treat DirectML and CUDA as interchangeable without a test.
+- On 2026-11-17 the CPU `onnxruntime.dll` did not export `OrtSessionOptionsAppendExecutionProvider_CUDA`. The engine reported that, set `ActiveBackend` to Cpu, and the UI said the run used CPU.
+
+## 4.4 Voice assignments
+
+`src/PaliaVoiceAI.Core/Npc/npc-voices.json` is the roster. It is copied next to the exe. If `%LOCALAPPDATA%\PaliaVoiceAI\npc-voices.json` exists and is newer, that copy wins.
+
+`%LOCALAPPDATA%\PaliaVoiceAI\voices.json` stores the user's voice, pace, favorite, and selected card. An old override beats the roster default. Do not delete that file to "reset" a voice unless the user asks.
+
+Empty `voiceId` means Unassigned. Preview and auto-speak say that no voice is set. They do not pick a substitute.
+
+Known defaults that must stay unless the user edits the JSON: Kenyatta `af_sky`, Eshe `bf_emma`, Tish `af_sarah`, Jina `af_heart`, Sifuu `af_nicole`, Najuma `af_jessica`, Tamala `bf_alice`, Caleri `af_kore`, Elouisa `af_nova`, Subira `af_bella`, Hekla `bf_isabella`, Delaila `bf_lily`, Ashura `am_michael`, Reth `am_echo`, Hassian `am_fenrir`, Hodari `bm_daniel`, Jel `bm_george`, Zeki `am_liam`, Chayne `am_adam`, Einar `bm_lewis`, Badruu `am_puck`, Kenli `am_onyx`, Nai'o `am_eric`, Unknown `af_bella`. Auni, Eshelon, Tau, Taylin, The Gardener, and Ulfe have no voice yet.
+
+Avatars are `src/PaliaVoiceAI.App/Avatars/{id}.png`, copied to `Avatars\` beside the exe. Twenty-eight wiki profile icons are there. Taylin has no profile icon on the wiki, so that card uses the drawn portrait. Nai'o is `naio.png`. The Gardener is `gardener.png`.
+
+---
+
+# 5. Starting benchmark settings
+
+These are starting points, not tuned results.
+
+| Setting | Start | State |
+| --- | --- | --- |
+| CPU intra-op threads | 3 | Used for the measured CPU sentence |
+| CPU inter-op threads | 1 | Set in the engine |
+| Graph optimization | Enable all | Set in the engine |
+| Concurrent TTS jobs | 1 | Design rule. A second click cancels the tracked request, but Kokoro itself is not interrupted mid-call |
+| CUDA memory arena | 1GB as a probe only | Not used. Not a cap on total VRAM |
+| OCR poll | 400 ms | Code default |
+| Stable reads before a line is accepted | 2 | Code default |
+| Duplicate window | 8 s | Code default |
+| Dialogue region on 1920×1200 | 131, 688, 975×438 | From one Kenyatta screenshot. Not confirmed live |
+
+---
+
+# 6. Solution shape
+
+What exists:
+
+```text
 PaliaVoiceAI.sln
-│
-├── src/
-│   ├── PaliaVoiceAI.App/
-│   │   ├── WPF Views
-│   │   ├── ViewModels
-│   │   ├── Application Startup
-│   │   └── Dependency Injection
-│   │
-│   ├── PaliaVoiceAI.Core/
-│   │   ├── Domain Models
-│   │   ├── Interfaces
-│   │   ├── Dialogue Processing
-│   │   ├── NPC/Voice Profile Contracts
-│   │   └── Benchmark Models
-│   │
-│   ├── PaliaVoiceAI.Capture/
-│   │   ├── Screen Capture
-│   │   ├── Capture Region
-│   │   └── Game Window Detection
-│   │
-│   ├── PaliaVoiceAI.OCR/
-│   │   ├── IOcrEngine
-│   │   ├── WindowsOcrEngine
-│   │   ├── Text Normalization
-│   │   └── Dialogue Change Detection
-│   │
-│   ├── PaliaVoiceAI.TTS/
-│   │   ├── ITtsEngine
-│   │   ├── KokoroTtsEngine
-│   │   ├── TtsOptions
-│   │   └── Model Management
-│   │
-│   ├── PaliaVoiceAI.Audio/
-│   │   ├── AudioPlayer
-│   │   ├── AudioQueue
-│   │   └── Playback Controller
-│   │
-│   └── PaliaVoiceAI.Infrastructure/
-│       ├── SQLite
-│       ├── Settings
-│       ├── Logging
-│       ├── Cache
-│       └── Installer/Update Support
-│
-├── tests/
-│   ├── PaliaVoiceAI.Core.Tests/
-│   ├── PaliaVoiceAI.TTS.Tests/
-│   ├── PaliaVoiceAI.OCR.Tests/
-│   └── PaliaVoiceAI.PerformanceTests/
-│
-├── models/
-│   └── kokoro/
-│
-├── docs/
-│   ├── PROJECT.md
-│   ├── ARCHITECTURE.md
-│   ├── BENCHMARKS.md
-│   └── THIRD_PARTY_NOTICES.md
-│
-└── installers/
+├── src/PaliaVoiceAI.App          WPF voice library, studio, capture settings
+├── src/PaliaVoiceAI.Core         models, NPC roster, speaker id, paths
+├── src/PaliaVoiceAI.Capture      game-window detect, GDI, Windows Graphics Capture
+├── src/PaliaVoiceAI.OCR          Windows OCR, text cleanup, dialogue tracker
+├── src/PaliaVoiceAI.TTS          KokoroTtsEngine, model download, MockTtsEngine
+├── src/PaliaVoiceAI.Audio        NAudio playback
+└── tests/                        Core and OCR
 ```
 
-**تنبيه حول الهيكل:** هذا هو الهيكل المستهدف. لا يعني ذلك أن جميع
-المشاريع والمجلدات والخدمات أعلاه موجودة في Starter الحالي.
+Not created yet: `PaliaVoiceAI.Infrastructure`, a TTS test project, a performance test project, `docs/`, `installers/`, and a `models/` folder in the repo. The ONNX file lives in the user profile, not in git.
+
+Target framework for App, Capture, OCR, and OCR tests: `net8.0-windows10.0.22621.0` with minimum version `10.0.19041.0`. Core, TTS, and Core tests: `net8.0`. Audio: `net8.0-windows`.
+
+There is no dependency-injection container. `MainWindow` constructs the engines.
+
+---
+
+# 7. Status ledger
+
+**Done** — the named behavior was checked.  
+**Partial** — some of it works, and the rest is named in the details.  
+**Not started** — no code for it.  
+**Not verified** — code or a decision exists, and the behavior was not checked.  
+**Decided only** — a choice was written down, and the feature was not built.  
+**Deferred** — left for a later phase on purpose.
+
+## 7.1 Solution setup
+
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| SET-001 | Create the solution | Done | `PaliaVoiceAI.sln`. Debug and Release both map to the projects |
+| SET-002 | Core project | Done | `PaliaVoiceAI.Core` |
+| SET-003 | TTS project | Done | Mock and `KokoroTtsEngine`. KokoroSharp.CPU 0.8.4 |
+| SET-004 | Audio project | Done | NAudio played the measured Kokoro WAV |
+| SET-005 | WPF app | Done | Voice library UI |
+| SET-006 | Capture project | Done | Window detect, GDI, Windows Graphics Capture. Live game not tested |
+| SET-007 | OCR project | Done | `WindowsOcrEngine` |
+| SET-008 | Infrastructure project | Not started | JSON files cover the current settings |
+| SET-009 | Dependency injection | Not started | The window creates the engines |
+| SET-010 | Logging | Not started | Failures go to status text |
+| SET-011 | Unit tests | Done | 2026-11-17: Core 26, OCR 3, all passed |
+| SET-012 | CI build | Not started | No pipeline |
+| SET-013 | Build on Windows | Done | Release app build on 2026-11-17, 0 warnings |
+| SET-014 | Launch the WPF window | Partial | The voice library opened and UI Automation saw the villager names. Capture was not clicked against Palia |
+
+## 7.2 UI
+
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| UI-001 | Main window | Done | Dark voice library: VoiceBox, Soundboard, Voicestudio, Settings |
+| UI-002 | Dialogue box | Done | Multiline box in Voicestudio |
+| UI-003 | Voice list | Done | Kokoro English voices. The combo shows the label, such as Bella |
+| UI-004 | Backend choice | Done | Default CPU. Mock is silent. CUDA falls back to CPU |
+| UI-005 | CPU threads | Done | Passed as `IntraOpNumThreads` for Kokoro. Mock ignores it |
+| UI-006 | Generate | Done | Kokoro for CPU/CUDA, Mock for the silent choice |
+| UI-007 | Play | Done | Last WAV. The Kokoro file was 16-bit PCM, 24000 Hz, mono |
+| UI-008 | Stop | Partial | Stops playback and cancels the download token. Does not interrupt Kokoro mid-synthesis |
+| UI-009 | Benchmark grid | Partial | Shows the rows loaded from the CSV |
+| UI-010 | Errors | Partial | Exception text is shown in the status line |
+| UI-011 | Settings | Partial | Capture region, preview, and monitor are on the Settings page. There is no general settings form |
+| UI-012 | Model-folder picker | Not started | The locator searches known folders and downloads into LocalAppData |
+| UI-013 | Audio device picker | Not started | Default output device |
+| UI-014 | Global stop hotkey | Not started | |
+| UI-015 | Theme | Partial | Dark theme is the app. There is no light theme |
+
+## 7.3 Core
+
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| CORE-001 | `TtsBackend` | Done | Mock, Cpu, Cuda |
+| CORE-002 | TTS options | Done | Backend and thread counts. Speed is a `GenerateAsync` argument |
+| CORE-003 | `TtsResult` | Done | Bytes, content type, timings, engine name |
+| CORE-004 | RTF | Done | Generation time / audio duration |
+| CORE-005 | `BenchmarkRecord` | Done | |
+| CORE-006 | `ITtsEngine` | Done | Initialize, Generate, Dispose |
+| CORE-007 | `IOcrEngine` | Done | Implemented by `WindowsOcrEngine` |
+| CORE-008 | `IAudioQueue` | Not started | Phase 4 |
+| CORE-009 | Voice profile | Done | `NpcProfile`, `VoiceLibraryState`, `VoiceProfileStore` |
+| CORE-010 | NPC identity | Done | Id, name, role, voice, pace, avatar, gender. Matching is the name plate, not a portrait detector |
+| CORE-011 | Drop an old line | Partial | A newer `SpeakAsync` supersedes the previous request number. Kokoro is not cancelled mid-call |
+| CORE-012 | Duplicates | Done | `DialogueTracker` and its tests |
+
+## 7.4 TTS
+
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| TTS-001 | Use Kokoro 82M | Done | CPU speech was produced |
+| TTS-002 | Mock engine | Done | Silent WAV for the pipeline |
+| TTS-003 | `ITtsEngine` | Done | |
+| TTS-004 | Pin KokoroSharp | Done | 0.8.4 for both packages. ONNX Runtime 1.22.0 |
+| TTS-005 | Download the model | Done | First run saved 325,508,342 bytes to `%LOCALAPPDATA%\PaliaVoiceAI\models\kokoro.onnx` |
+| TTS-006 | Load the model | Done | Second run used the local file and did not download again |
+| TTS-007 | Real speech | Done | CPU WAV, then playback |
+| TTS-008 | Try the English voices | Partial | `af_bella` spoke. The other ids in the combo have not been synthesized |
+| TTS-009 | Listening review | Not started | Needs a person to listen |
+| TTS-010 | Long text | Not started | |
+| TTS-011 | Streaming | Not started | |
+| TTS-012 | Cancel generation | Partial | Stop cancels the token around the call. The Kokoro call itself finishes |
+| TTS-013 | Keep the model locally | Done | See TTS-006 |
+| TTS-014 | Check the model hash before distribution | Not started | The downloaded file's SHA-256 was recorded. The downloader does not yet reject a mismatch. Hash: `0CFD5E79AAB70A3D8C1A57DC639835110DDB32C9F5FF4FDD1F4DB202EA43BB05` |
+| TTS-015 | License review for redistribution | Not verified | KokoroSharp is MIT. The model and voices are Apache-2.0 according to the package notes. A distribution review is still open |
+
+Model URL: `https://github.com/Lyrcaxis/KokoroSharpBinaries/releases/download/v2.0.0/kokoro.onnx`. The locator also accepts `kokoro.onnx` or `kokoro-v1.0.onnx` beside the exe, in the working directory, or in Downloads, and uses that file in place. It does not copy a 310MB file. Download uses user agent `PaliaVoiceAI`, a 30-minute timeout, a `.download` temp file removed on failure, and it rejects a file under 50MB.
+
+Measured CPU line, voice `af_bella`, 3 threads, after the model was already present:
 
-------------------------------------------------------------------------
-
-# 7. حالة التنفيذ الفعلية --- سجل المهام
-
-## تعريف الحالات
-
--   **منفذ:** الكود أو المستند موجود وتم تنفيذ المطلوب المحدد.
--   **منفذ جزئياً:** يوجد هيكل أو جزء أولي، لكن الوظيفة الكاملة غير
-    متاحة.
--   **غير منفذ:** لم يبدأ التنفيذ.
--   **غير متحقق:** يوجد تنفيذ أو اعتماد مقترح، لكن لم يتم اختباره عملياً.
--   **مؤجل:** تم تأجيله عمداً إلى مرحلة لاحقة.
--   **يحتاج قراراً:** لا يمكن إكماله قبل حسم قرار تقني أو وظيفي.
-
-## 7.1 تأسيس المستودع والمشروع
-
-  ----------------------------------------------------------------------------------
-  ID                المهمة            الحالة            التفاصيل
-  ----------------- ----------------- ----------------- ----------------------------
-  SET-001           إنشاء Solution    منفذ              ملف `PaliaVoiceAI.sln` موجود
-                                                        في Starter
-
-  SET-002           إنشاء مشروع Core  منفذ              `PaliaVoiceAI.Core.csproj`
-                                                        موجود
-
-  SET-003           إنشاء مشروع TTS   منفذ              Mock و`KokoroTtsEngine`.
-                                                        KokoroSharp.CPU 0.8.4
-
-  SET-004           إنشاء مشروع Audio منفذ جزئياً        NAudio وAudioPlayer موجودان،
-                                                        يحتاج اختباراً عملياً
-
-  SET-005           إنشاء مشروع WPF   منفذ              ملفات App وMainWindow موجودة
-                    App                                 
-
-  SET-006           إنشاء مشروع       منفذ              `PaliaVoiceAI.Capture`
-                    Capture مستقل                       مع اكتشاف النافذة
-                                                        والتقاط GDI وWGC
-
-  SET-007           إنشاء مشروع OCR   منفذ              `PaliaVoiceAI.OCR`
-                    مستقل                               و`WindowsOcrEngine`
-
-  SET-008           إنشاء             غير منفذ          لم ينشأ بعد
-                    Infrastructure                      
-
-  SET-009           إعداد Dependency  غير منفذ          التطبيق الحالي ينشئ Mock
-                    Injection                           مباشرة
-
-  SET-010           إعداد Logging     غير منفذ          لا توجد منظومة Logging
-                                                        متكاملة
-
-  SET-011           إعداد Unit Tests  منفذ              21 اختباراً نجحت:
-                                                        Core 19 وOCR 2
-
-  SET-012           إعداد CI Build    غير منفذ          لا يوجد Pipeline
-
-  SET-013           بناء المشروع على  منفذ              `dotnet build` نجح لـ
-                    Windows                             Debug وRelease بلا
-                                                        تحذيرات في 2026-11-17
-
-  SET-014           اختبار تشغيل WPF  منفذ جزئياً        نسخة Debug اشتغلت وبقيت
-                                                        تعمل ثم أُغلقت. لم يُنقر
-                                                        مسار Capture يدوياً
-  ----------------------------------------------------------------------------------
-
-## 7.2 واجهة المستخدم
-
-  ----------------------------------------------------------------------------
-  ID                المهمة               الحالة            التفاصيل
-  ----------------- -------------------- ----------------- -------------------
-  UI-001            نافذة WPF الرئيسية   منفذ              `MainWindow.xaml`
-                                                           موجود
-
-  UI-002            مربع إدخال الحوار    منفذ              TextBox متعدد
-                                                           الأسطر
-
-  UI-003            قائمة Voice ID       منفذ              خيارات تجريبية
-                                                           موجودة
-
-  UI-004            اختيار Backend       منفذ              الافتراضي CPU.
-                                                           Mock يبقى صامتاً.
-                                                           CUDA يرجع إلى CPU
-
-  UI-005            اختيار CPU Threads   منفذ              القيمة تُمرر كـ
-                                                           IntraOpNumThreads
-
-  UI-006            زر                   منفذ              يستدعي Kokoro عند
-                    Generate/Benchmark                     CPU/CUDA، وMock
-                                                           عند الاختيار الصامت
-
-  UI-007            زر Play              منفذ              يعيد تشغيل آخر WAV.
-                                                           ملف Kokoro فُتح
-                                                           بـ NAudio: 16-bit
-                                                           24000Hz أحادي
-
-  UI-008            زر Stop              منفذ جزئياً        يستدعي إيقاف
-                                                           AudioPlayer
-
-  UI-009            عرض نتائج Benchmark  منفذ جزئياً        DataGrid يعرض
-                                                           السجلات المتاحة
-
-  UI-010            عرض رسائل الأخطاء    منفذ جزئياً        يعرض رسالة
-                                                           الاستثناء في
-                                                           StatusText
-
-  UI-011            شاشة إعدادات كاملة   غير منفذ          لا توجد شاشة
-                                                           إعدادات مستقلة
-
-  UI-012            اختيار مجلد النموذج  غير منفذ          لا يوجد Model
-                                                           Manager
-
-  UI-013            اختيار جهاز الصوت    غير منفذ          يستخدم جهاز التشغيل
-                                                           الافتراضي
-
-  UI-014            اختصار إيقاف فوري    غير منفذ          لم ينفذ
-
-  UI-015            Dark/Light Theme     غير منفذ          ليس ضمن Starter
-                                                           الحالي
-  ----------------------------------------------------------------------------
-
-## 7.3 طبقة Core
-
-  ------------------------------------------------------------------------
-  ID                المهمة            الحالة            التفاصيل
-  ----------------- ----------------- ----------------- ------------------
-  CORE-001          تعريف TtsBackend  منفذ              Mock/CPU/Cuda enum
-
-  CORE-002          تعريف TtsOptions  منفذ              Backend
-                                                        وIntraOp/InterOp
-                                                        Threads
-
-  CORE-003          تعريف TtsResult   منفذ              Bytes وContentType
-                                                        والأزمنة
-                                                        وEngineName
-
-  CORE-004          حساب RTF          منفذ              Generation Time /
-                                                        Audio Duration
-
-  CORE-005          تعريف             منفذ              بيانات التوقيت
-                    BenchmarkRecord                     والـBackend والنص
-
-  CORE-006          تعريف ITtsEngine  منفذ              InitializeAsync
-                                                        وGenerateAsync
-                                                        وDisposeAsync
-
-  CORE-007          تعريف IOcrEngine  منفذ              `IOcrEngine` و
-                                                        `WindowsOcrEngine`
-
-  CORE-008          تعريف IAudioQueue غير منفذ          لم يبدأ
-
-  CORE-009          تعريف             غير منفذ          لم يبدأ
-                    VoiceProfile                        
-
-  CORE-010          تعريف NPC         غير منفذ          لم يبدأ
-                    identity model                      
-
-  CORE-011          سياسة إلغاء       غير منفذ          لم يبدأ
-                    الحوار القديم                       
-
-  CORE-012          معالجة التكرار    منفذ              `DialogueTracker`
-                                                        واختبارات الوحدة
-  ------------------------------------------------------------------------
-
-## 7.4 محرك TTS
-
-  ---------------------------------------------------------------------------
-  ID                المهمة              الحالة            التفاصيل
-  ----------------- ------------------- ----------------- -------------------
-  TTS-001           اختيار Kokoro 82M   منفذ              KokoroSharp.CPU 0.8.4
-                    كمرشح أول                             وتوليد CPU متحقق
-
-  TTS-002           إضافة MockTtsEngine منفذ              ينشئ WAV صامتاً
-                                                          للتحقق من مسار
-                                                          التطبيق
-
-  TTS-003           تعريف ITtsEngine    منفذ              يسمح بفصل المحرك عن
-                                                          بقية التطبيق
-
-  TTS-004           تثبيت إصدار         منفذ              KokoroSharp.CPU 0.8.4
-                    KokoroSharp نهائي                     وKokoroSharp 0.8.4
-                                                          وONNX Runtime 1.22.0
-
-  TTS-005           تنزيل ملفات Kokoro  منفذ              أول تشغيل نزّل
-                    Model                                 325,508,342 بايت إلى
-                                                          `%LOCALAPPDATA%\PaliaVoiceAI\models\kokoro.onnx`
-
-  TTS-006           تحميل نموذج Kokoro  منفذ              `KokoroTtsEngine`
-                    من C#                                 يحمّل الملف المحلي
-
-  TTS-007           توليد كلام حقيقي    منفذ              صوت CPU غير صامت،
-                                                          ثم تشغيل WAV
-
-  TTS-008           اختبار الأصوات      منفذ جزئياً        `af_bella` أنتجت
-                    الإنجليزية                            كلاماً. بقية أصوات
-                                                          الواجهة لم تُنطق بعد
-
-  TTS-009           اختبار جودة النطق   غير منفذ          يحتاج تقييم استماع
-
-  TTS-010           اختبار النصوص       غير منفذ          لم يبدأ
-                    الطويلة                               
-
-  TTS-011           Streaming/Chunked   غير منفذ          لم يبدأ
-                    Generation                            
-
-  TTS-012           إلغاء التوليد       منفذ جزئياً        Stop يلغي التنزيل
-                                                          ويوقف التشغيل.
-                                                          التوليد الجاري داخل
-                                                          Kokoro لا يُقطع
-
-  TTS-013           تخزين النموذج محلياً منفذ              المسار أعلاه.
-                                                          التشغيل الثاني وجده
-                                                          ولم يعد التنزيل
-
-  TTS-014           التحقق من Hash      غير منفذ          مطلوب قبل التوزيع
-                    للنموذج                               
-
-  TTS-015           مراجعة الترخيص      غير متحقق         يجب مراجعة ترخيص كل
-                                                          ملف نموذج وصوت
-                                                          ومكتبة قبل التوزيع
-  ---------------------------------------------------------------------------
-
-## 7.5 ONNX Runtime وGPU
-
-  -----------------------------------------------------------------------
-  ID                المهمة            الحالة            التفاصيل
-  ----------------- ----------------- ----------------- -----------------
-  ONNX-001          اعتماد ONNX       منفذ              Microsoft.ML.OnnxRuntime
-                    Runtime كخيار                       1.22.0 عبر
-                    تقني                                KokoroSharp.CPU
-
-  ONNX-002          إضافة ONNX        منفذ              الاستدلال على CPU
-                    Runtime CPU                         نجح بهذه الحزمة
-
-  ONNX-003          إضافة ONNX        غير منفذ          لم تُضف حزمة GPU
-                    Runtime GPU                         ولم يُثبَّت CUDA
-
-  ONNX-004          التحقق من CUDA    منفذ              المزود غير موجود في
-                    compatibility                       onnxruntime.dll لهذه
-                                                        الحزمة. لم يُثبَّت
-                                                        CUDA أو cuDNN
-
-  ONNX-005          إعداد CPU Session منفذ              IntraOp من الواجهة،
-                                                        InterOp 1، وتحسين
-                                                        كامل. أنتج كلاماً
-
-  ONNX-006          إعداد CUDA        منفذ جزئياً        المحاولة عبر
-                    Provider                            AppendExecutionProvider_CUDA
-                                                        فشلت: لا توجد نقطة
-                                                        الدخول
-
-  ONNX-007          CPU fallback      منفذ              بعد الفشل أصبح
-                                                        ActiveBackend هو Cpu
-
-  ONNX-008          GPU memory        غير منفذ          لم يبدأ
-                    monitoring                          
-
-  ONNX-009          تحديد Threads     غير منفذ          الواجهة تقرأ
-                    فعلياً                               القيمة، لكن Mock
-                                                        لا يستخدمها
-
-  ONNX-010          اختبار Session    غير متحقق         لا توجد جلسة ONNX
-                    initialization                      في Starter
-
-  ONNX-011          اختبار GPU        غير متحقق         لم يتم على الجهاز
-                    inference                           
-
-  ONNX-012          اختبار CPU        غير متحقق         لم يتم على الجهاز
-                    inference                           
-  -----------------------------------------------------------------------
-
-## 7.6 الصوت
-
-  ------------------------------------------------------------------------
-  ID                المهمة            الحالة            التفاصيل
-  ----------------- ----------------- ----------------- ------------------
-  AUD-001           إضافة NAudio      منفذ              PackageReference
-                                                        إلى NAudio 2.2.1
-
-  AUD-002           إنشاء AudioPlayer منفذ جزئياً        تشغيل WAV من
-                                                        MemoryStream
-
-  AUD-003           تشغيل الصوت       منفذ جزئياً        تم توصيله بملف WAV
-                    الناتج                              الصامت من Mock
-
-  AUD-004           إيقاف الصوت       منفذ جزئياً        Stop/Dispose
-                                                        موجودان
-
-  AUD-005           اختيار Audio      غير منفذ          يستخدم Default
-                    Device                              Output
-
-  AUD-006           Audio Queue       غير منفذ          لم تنفذ
-
-  AUD-007           منع تداخل الأصوات غير منفذ          لا توجد Queue
-
-  AUD-008           Crossfade أو      غير منفذ          ليس ضمن المتطلبات
-                    انتقال صوتي                         الأولية
-
-  AUD-009           ضبط مستوى الصوت   غير منفذ          لم ينفذ
-
-  AUD-010           اختبار تشغيل طويل غير متحقق         لم يتم على جهاز
-                                                        المستخدم
-  ------------------------------------------------------------------------
-
-## 7.7 Benchmark وPerformance
-
-  -----------------------------------------------------------------------
-  ID                المهمة            الحالة            التفاصيل
-  ----------------- ----------------- ----------------- -----------------
-  BEN-001           BenchmarkRecord   منفذ              النموذج موجود
-                    model                               
-
-  BEN-002           حساب RTF          منفذ              خاصية محسوبة في
-                                                        TtsResult
-
-  BEN-003           تسجيل زمن التوليد منفذ جزئياً        يسجل زمن Mock
-
-  BEN-004           تصدير CSV         منفذ جزئياً        يكتب إلى
-                                                        LocalAppData
-
-  BEN-005           قياس CPU          غير منفذ          لا يوجد Collector
-                    utilization                         
-
-  BEN-006           قياس GPU          غير منفذ          لا يوجد Collector
-                    utilization                         
-
-  BEN-007           قياس VRAM         غير منفذ          لا يوجد Collector
-
-  BEN-008           قياس RAM          غير منفذ          لا يوجد Collector
-
-  BEN-009           قياس FPS          غير منفذ          يحتاج أداة قياس
-                                                        خارجية أو تكامل
-                                                        قياس موثوق
-
-  BEN-010           قياس 1% Low FPS   غير منفذ          لم يبدأ
-
-  BEN-011           قياس First Audio  غير منفذ          حالياً يوجد
-                    Latency                             Generation Time
-                                                        فقط
-
-  BEN-012           اختبار 20 جملة    غير منفذ          لم تنشأ مجموعة
-                                                        بيانات الاختبار
-
-  BEN-013           مقارنة 2/3/4 CPU  غير منفذ          لم يتم
-                    Threads                             
-
-  BEN-014           مقارنة CPU/CUDA   غير منفذ          لم يتم
-
-  BEN-015           اختبار Palia      غير منفذ          لم يتم
-                    بالتزامن                            
-
-  BEN-016           تقرير Benchmark   غير منفذ          لم يتم
-                    نهائي                               
-  -----------------------------------------------------------------------
-
-## 7.8 OCR وقراءة الشاشة
-
-  -----------------------------------------------------------------------
-  ID                المهمة            الحالة            التفاصيل
-  ----------------- ----------------- ----------------- -----------------
-  OCR-001           اختيار Windows    منفذ              `WindowsOcrEngine`
-                    OCR كبداية                          للإنجليزية
-
-  OCR-002           التقاط الشاشة     منفذ جزئياً        نسخ GDI اختُبر
-                                                        24×24. التقاط نافذة
-                                                        اللعبة عبر WGC مكتوب
-                                                        ولم يُختبر داخل Palia
-
-  OCR-003           تحديد نافذة Palia منفذ جزئياً        منطق الاختيار مُختبَر.
-                                                        لم تُفحص عملية اللعبة
-                                                        وهي تعمل
-
-  OCR-004           تحديد منطقة       منفذ جزئياً        الاقتراح يطابق بطاقة
-                    الحوار                              الحوار أسفل اليسار من
-                                                        لقطة Kenyatta. ما زال
-                                                        يحتاج ضبطاً داخل اللعبة
-
-  OCR-005           استخراج النص      منفذ جزئياً        تعرّف على "Kilima"
-                                                        من صورة مرسومة. ليس
-                                                        من واجهة اللعبة
-
-  OCR-006           تنظيف النص        منفذ              `TextNormalizer`
-                                                        واختباراته
-
-  OCR-007           كشف تغير الحوار   منفذ              بداية وتغيّر ونهاية
-                                                        في `DialogueTracker`
-
-  OCR-008           منع إعادة قراءة   منفذ              نافذة التكرار مغطاة
-                    النص نفسه                           باختبار وحدة
-
-  OCR-009           التعامل مع النص   منفذ جزئياً        القراءة غير المستقرة
-                    غير الواضح                          والنص الفارغ لا يُقبلان.
-                                                        Windows OCR لا يعطي
-                                                        درجة ثقة عامة
-
-  OCR-010           اختبار OCR مع     غير متحقق         يحتاج تشغيل Palia
-                    واجهة اللعبة                        واختباراً بصرياً
-  -----------------------------------------------------------------------
-
-## 7.9 اكتشاف الشخصيات وإدارة الأصوات
-
-  ID        المهمة                      الحالة     التفاصيل
-  --------- --------------------------- ---------- -----------------------
-  NPC-001   تصميم VoiceProfile          منفذ       `NpcProfile` و`VoiceLibraryState`
-  NPC-002   قائمة NPCs                  منفذ       29 قروياً وUnknown من `npc-voices.json`. لم تُستبدل أصوات Kokoro الحالية
-  NPC-003   ربط NPC بـVoice ID          منفذ       `voiceId` في `npc-voices.json`. تعديل المستخدم يبقى في `voices.json`
-  NPC-004   كشف اسم الشخصية من الشاشة   منفذ جزئياً  من لوحة الاسم في النص. لم يُختبر داخل اللعبة
-  NPC-005   قواعد تحديد الشخصية         منفذ       الاسم على سطر اللوحة فقط، لا الاسم المذكور داخل الجملة
-  NPC-006   التعامل مع NPC غير معروف    منفذ       بطاقة Unknown وصوتها الاحتياطي
-  NPC-007   تعديل الصوت لكل شخصية       منفذ جزئياً  تغيير الصوت محفوظ. Pace يُرسل إلى Kokoro ولم يُسمع فرق السرعة
-  NPC-008   اختبار تمييز الشخصيات       منفذ جزئياً  Kenyatta وEshe وNai'o في اختبار وحدة. لا اختبار حي
-
-## 7.10 Cache وPersistence
-
-  -----------------------------------------------------------------------
-  ID                المهمة            الحالة            التفاصيل
-  ----------------- ----------------- ----------------- -----------------
-  DATA-001          اختيار SQLite     منفذ كقرار        لم تضاف حزمة أو
-                                                        قاعدة بيانات
-
-  DATA-002          إنشاء قاعدة       غير منفذ          لم يبدأ
-                    البيانات                            
-
-  DATA-003          تخزين Voice       غير منفذ          لم يبدأ
-                    Profiles                            
-
-  DATA-004          تخزين إعدادات     غير منفذ          لا يوجد Settings
-                    المستخدم                            Service
-
-  DATA-005          تخزين Audio Cache غير منفذ          لم يبدأ
-
-  DATA-006          Cache Key         غير منفذ          يجب أن يشمل النص
-                                                        والصوت والإعدادات
-                                                        وإصدار النموذج
-
-  DATA-007          تنظيف Cache       غير منفذ          لم يبدأ
-
-  DATA-008          ترحيل Schema      غير منفذ          لم يبدأ
-  -----------------------------------------------------------------------
-
-## 7.11 التوزيع والتثبيت
-
-  -----------------------------------------------------------------------
-  ID                المهمة            الحالة            التفاصيل
-  ----------------- ----------------- ----------------- -----------------
-  DIST-001          مراعاة التوزيع في منفذ كقرار        ليس Installer
-                    التصميم                             جاهزاً
-
-  DIST-002          Self-contained    غير منفذ          لم ينفذ
-                    Publish                             
-
-  DIST-003          CPU Installer     غير منفذ          لم ينفذ
-
-  DIST-004          NVIDIA/GPU        غير منفذ          لم ينفذ
-                    Installer                           
-
-  DIST-005          Model Download    غير منفذ          لم ينفذ
-                    Manager                             
-
-  DIST-006          التحقق من Hash    غير منفذ          لم ينفذ
-                    للملفات                             
-
-  DIST-007          التحقق من متطلبات غير منفذ          لم ينفذ
-                    النظام                              
-
-  DIST-008          التحديث التلقائي  غير منفذ          لم ينفذ
-
-  DIST-009          Uninstaller       غير منفذ          لم ينفذ
-
-  DIST-010          Third-party       غير منفذ          مطلوب قبل التوزيع
-                    Notices                             
-
-  DIST-011          اختبار على جهاز   غير منفذ          لم يبدأ
-                    آخر                                 
-
-  DIST-012          توقيع التطبيق     غير منفذ          قرار لاحق قبل
-                    رقمياً                               التوزيع العام
-  -----------------------------------------------------------------------
-
-------------------------------------------------------------------------
-
-# 8. تفاصيل Starter الحالي
-
-تم إنشاء ملف:
-
-`PaliaVoiceAI-Phase1-Starter.zip`
-
-ويحتوي على الملفات الأساسية التالية:
-
-``` text
-PaliaVoiceAI-Phase1/
-├── README.md
-├── PaliaVoiceAI.sln
-└── src/
-    ├── PaliaVoiceAI.Core/
-    │   ├── PaliaVoiceAI.Core.csproj
-    │   ├── Models.cs
-    │   └── ITtsEngine.cs
-    │
-    ├── PaliaVoiceAI.TTS/
-    │   ├── PaliaVoiceAI.TTS.csproj
-    │   └── MockTtsEngine.cs
-    │
-    ├── PaliaVoiceAI.Audio/
-    │   ├── PaliaVoiceAI.Audio.csproj
-    │   └── AudioPlayer.cs
-    │
-    └── PaliaVoiceAI.App/
-        ├── PaliaVoiceAI.App.csproj
-        ├── App.xaml
-        ├── App.xaml.cs
-        ├── MainWindow.xaml
-        └── MainWindow.xaml.cs
-```
-
-## 8.1 ما يفعله Starter فعلياً
-
--   يعرض نافذة WPF.
--   يسمح بإدخال نص إنجليزي.
--   يعرض أصوات Kokoro: `af_bella` و`af_nicole` و`am_michael` و`bm_george`.
--   يتيح Mock وCPU وCUDA. الافتراضي CPU.
--   يقرأ عدد Threads ويستخدمه كـ IntraOpNumThreads.
--   عند CPU أو CUDA يحمّل Kokoro. إذا غاب النموذج يُنزَّل مرة واحدة ثم يُستخدم.
--   بعد كلام Kokoro يشغّل WAV الناتج. Mock يبقى صامتاً.
--   يسجل Benchmark في `%LOCALAPPDATA%\PaliaVoiceAI\benchmarks.csv` ويحمّله عند الفتح.
-
-## 8.2 قيود Starter
-
-1.  طلب CUDA لا يشغّل GPU على هذه الحزمة؛ ينقص `OrtSessionOptionsAppendExecutionProvider_CUDA` فيرجع التشغيل إلى CPU.
-2.  Mock لا يولد كلاماً ولا يمثل جودة Kokoro.
-3.  RTF الناتج عن Mock ليس مقياساً لأداء TTS الحقيقي.
-4.  ONNX Runtime GPU غير مضاف، ولم يُثبَّت CUDA أو cuDNN.
-5.  النموذج ليس داخل المثبت؛ يُحفظ بعد التنزيل في مجلد المستخدم.
-6.  التعرف على المتحدث يعمل على نص البطاقة، ولم يُتحقق منه على نافذة Palia الحية.
-7.  لا يوجد Cache حقيقي للصوت.
-8.  لا يعتبر البناء الحالي نسخة قابلة للتوزيع النهائي.
-
-## 8.3 ما أضافه Phase 2
-
--   مشروع `PaliaVoiceAI.Capture`: اكتشاف نافذة Palia، نسخ منطقة من الشاشة، والتقاط نافذة اللعبة عبر Windows Graphics Capture.
--   مشروع `PaliaVoiceAI.OCR`: تعرّف إنجليزي عبر Windows OCR.
--   `TextNormalizer` و`DialogueTracker`: تنقية النص، وانتظار استقراره، وكشف البداية والتغيّر والنهاية، ومنع تكرار السطر نفسه داخل نافذة زمنية.
--   تبويب Capture في الواجهة: منطقة الالتقاط، معاينة، مراقبة، ونسخ السطر الجديد إلى مربع الحوار.
--   تُحفظ إعدادات الالتقاط في `%LOCALAPPDATA%\PaliaVoiceAI\capture.json`، وآخر صورة في `last-capture.bmp`.
--   أسماء العمليات التي يبحث عنها الكشف: `PaliaClientSteam-Win64-Shipping` و`PaliaClient-Win64-Shipping` ثم نسخ الاختبار، ثم `Palia`.
--   زر Stop يلغي التوليد أو التنزيل الجاري ويوقف التشغيل. التوليد الذي بدأ داخل Kokoro يكمل حتى انتهاء الجملة.
--   التحقق الذي تم: `dotnet test` بتاريخ 2026-11-17، 24 اختباراً ناجحاً (21 في Core و3 في OCR). بناء Debug وRelease نجح بلا تحذيرات. لم يُختبر المسار على نافذة Palia وهي تعمل.
-
-------------------------------------------------------------------------
-
-# 9. خطة التنفيذ المرحلية
-
-## Phase 1 --- TTS Benchmark Foundation
-
-**الهدف:** تشغيل Kokoro حقيقياً في تطبيق WPF، واختبار الصوت والأداء قبل
-إدخال OCR.
-
-  -----------------------------------------------------------------------
-  ID                المهمة            الحالة الحالية    مخرج المرحلة
-  ----------------- ----------------- ----------------- -----------------
-  P1-001            إنشاء WPF Starter منفذ              Solution أولي
-
-  P1-002            بناء الواجهة      منفذ              واجهة الاختبار
-                                                        موصولة بـ Kokoro
-
-  P1-003            تعريف ITtsEngine  منفذ              Interface
-
-  P1-004            Mock Engine       منفذ              اختبار مسار WAV
-                                                        الصامت
-
-  P1-005            تثبيت KokoroSharp منفذ              KokoroSharp.CPU
-                    بإصدار محدد                         0.8.4
-
-  P1-006            إضافة ملفات       منفذ              `kokoro.onnx` في
-                    Kokoro                              مجلد المستخدم
-
-  P1-007            تنفيذ             منفذ              `KokoroTtsEngine`
-                    KokoroTtsEngine                     
-
-  P1-008            CPU inference     منفذ              صوت حقيقي على CPU
-
-  P1-009            CUDA inference    منفذ جزئياً        لا يوجد مزود CUDA؛
-                                                        الرجوع إلى CPU متحقق
-
-  P1-010            قياس الأداء       منفذ جزئياً        قياس CPU واحد
-                                                        مسجّل أدناه
-
-  P1-011            اختبار جودة       غير منفذ          نتائج استماع
-                    الأصوات                             ومقارنة
-
-  P1-012            اختبار Palia      غير منفذ          تقرير أثر الأداء
-                    بالتزامن                            
-  -----------------------------------------------------------------------
-
-**شرط إغلاق Phase 1:** توليد كلام حقيقي من Kokoro على الأقل عبر CPU، ثم
-اختبار CUDA إذا كان التوافق متاحاً، وتسجيل نتائج قابلة لإعادة القياس.
-
-**حالة 2026-11-17:** شرط CPU مغلق. الجملة
 `Hello! Welcome to Kilima Village. How can I help you today?`
-بصوت `af_bella` و3 خيوط أنتجت WAV بطول 4,510 مللي ثانية. بعد وجود النموذج
-كانت مدة التوليد 1,598 مللي ثانية وRTF‏ 0.354. أول توليد بعد التنزيل كان
-2,040 مللي ثانية وRTF‏ 0.452. أعلى عينة 17,845، والملف 216,508 بايت،
-16-bit PCM أحادي على 24,000 Hz. NAudio فتحه، ومشغّل Windows شغّله.
-النموذج: 325,508,342 بايت، SHA-256
-`0CFD5E79AAB70A3D8C1A57DC639835110DDB32C9F5FF4FDD1F4DB202EA43BB05`،
-من إصدار KokoroSharpBinaries‏ v2.0.0. التشغيل الثاني وجد الملف ولم يعد
-التنزيل. طلب CUDA أعاد ActiveBackend إلى Cpu لأن نقطة الدخول
-`OrtSessionOptionsAppendExecutionProvider_CUDA` غير موجودة. لم يُثبَّت
-CUDA أو cuDNN. لم يُقيَّم الاستماع، ولم يُقاس أثر التشغيل مع Palia.
 
-## Phase 2 --- OCR وScreen Capture
+Generation 1,598 ms. Audio 4,510 ms. RTF 0.354. File 216,508 bytes. Peak sample 17,845. 16-bit PCM, 24000 Hz, mono. NAudio opened it and the Windows player played it. The cold run just after download was 2,040 ms, RTF 0.452.
 
--   تنفيذ التقاط نافذة اللعبة.
--   إعداد Region للحوار.
--   تنفيذ OCR.
--   تنقية النص.
--   كشف بداية الحوار ونهايته.
--   كشف تغير النص.
--   منع التكرار.
--   اختبار OCR أثناء اللعب.
+## 7.5 ONNX and GPU
 
-**شرط الإغلاق:** استخراج الحوار الجديد بصورة مستقرة دون قراءة النص نفسه
-مرات غير ضرورية.
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| ONNX-001 | Use ONNX Runtime | Done | 1.22.0 through the CPU package |
+| ONNX-002 | CPU package | Done | The measured sentence used it |
+| ONNX-003 | GPU package | Not started | Do not add it until the versions are pinned |
+| ONNX-004 | CUDA compatibility check | Done | The CPU DLL has no CUDA entry point. CUDA and cuDNN were not installed |
+| ONNX-005 | CPU session | Done | Intra-op from the UI, inter-op 1, full optimization. It spoke |
+| ONNX-006 | CUDA provider | Partial | Reflection finds the managed method. The native DLL lacks `OrtSessionOptionsAppendExecutionProvider_CUDA` |
+| ONNX-007 | CPU fallback | Done | `ActiveBackend` becomes Cpu |
+| ONNX-008 | GPU memory monitor | Not started | |
+| ONNX-009 | Thread count is real | Partial | Kokoro uses intra-op threads. Mock does not |
+| ONNX-010 | Session startup | Done | The CPU session started and spoke |
+| ONNX-011 | GPU inference | Not verified | Not run on this PC |
+| ONNX-012 | CPU inference | Done | See the measurement in section 7.4 |
 
-**حالة 2026-11-17:** منطق الاستقرار والتكرار والتنقية منفّذ ومغطى
-باختبارات. Windows OCR قرأ نصاً إنجليزياً مرسوماً. التقاط GDI لمنطقة صغيرة
-نجح. التقاط نافذة Palia نفسها، وضبط منطقة الحوار على واجهة اللعبة، لم
-يُتحققا بعد، لذلك شرط الإغلاق الحي لم يُغلق. كلام Kokoro على CPU متحقق،
-وشرط إغلاق Phase 1 الخاص به مغلق. كلام CUDA نفسه غير متاح على حزمة ONNX
-الحالية.
+## 7.6 Audio
 
-## Phase 3 --- NPC Voice Profiles
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| AUD-001 | NAudio | Done | 2.2.1 |
+| AUD-002 | `AudioPlayer` | Done | Played the Kokoro WAV from memory |
+| AUD-003 | Play generated audio | Done | The real WAV, not only the silent mock |
+| AUD-004 | Stop | Partial | Stop and dispose exist. Mid-synthesis Kokoro is not cut |
+| AUD-005 | Choose a device | Not started | Default output |
+| AUD-006 | Queue | Not started | Phase 4 |
+| AUD-007 | No overlap | Not started | Phase 4 |
+| AUD-008 | Crossfade | Deferred | Not a first-release requirement |
+| AUD-009 | Volume | Not started | |
+| AUD-010 | Long playback test | Not verified | |
 
--   تصميم نموذج NPC.
--   تصميم VoiceProfile.
--   إعداد ملفات الشخصيات.
--   ربط NPC بصوت ثابت.
--   إعداد سرعة ونبرة الصوت إذا دعمها المحرك.
--   إضافة إمكانية تعديل الربط من الواجهة.
--   معالجة الشخصيات غير المعروفة.
+## 7.7 Benchmark
 
-**شرط الإغلاق:** اختيار Voice Profile الصحيح للحوار المعروف، مع سلوك
-واضح عند عدم القدرة على تحديد الشخصية.
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| BEN-001 | Record model | Done | |
+| BEN-002 | RTF | Done | |
+| BEN-003 | Save generation time | Partial | The CPU measurement above was recorded. There is no 20-sentence set |
+| BEN-004 | CSV | Partial | `%LOCALAPPDATA%\PaliaVoiceAI\benchmarks.csv` is loaded on startup and rewritten. A bad header is moved to `.bak` |
+| BEN-005 | CPU utilization | Not started | |
+| BEN-006 | GPU utilization | Not started | |
+| BEN-007 | VRAM | Not started | |
+| BEN-008 | RAM | Not started | |
+| BEN-009 | FPS | Not started | Needs an external capture or a trusted counter |
+| BEN-010 | 1% low FPS | Not started | |
+| BEN-011 | First-audio latency | Not started | Only full-file generation time exists. No streaming |
+| BEN-012 | 20-sentence set | Not started | |
+| BEN-013 | Compare 2/3/4 threads | Not started | Only 3 threads were measured |
+| BEN-014 | Compare CPU and CUDA | Not started | CUDA cannot run on this package |
+| BEN-015 | Benchmark while Palia runs | Not started | |
+| BEN-016 | Final report | Not started | |
 
-**حالة 2026-11-17:** الواجهة أصبحت مكتبة أصوات بالتخطيط الداكن: VoiceBox وSoundboard وVoicestudio وSettings. كل بطاقة NPC تحمل صوت Kokoro قابلاً للتغيير، وزر المعاينة يمر على نفس مسار التوليد. السطر الذي يبدأ باسم معروف يختار تلك البطاقة؛ السطر بلا اسم يختار Unknown. هذا متحقق باختبار على نص بطاقة Kenyatta، وليس أثناء اللعب. Pace محفوظ ويُمرر للمحرك، ولم يُقاس أثره سمعياً. القائمة نفسها تُقرأ من `npc-voices.json`، وأيقونات الويكي مربوطة بالاسم. أصوات Kokoro التي كانت في التطبيق بقيت كما هي، ولم تُنسخ توصيات ملف التخطيط. التحقق: 29 اختباراً ناجحاً، وبناء Release بلا تحذيرات، والنافذة أظهرت Kenyatta وAuni وTaylin وThe Gardener وUlfe وUnassigned. ملفات الأيقونات الـ28 موجودة بجانب البرنامج. Taylin بلا أيقونة على الويكي. لم تُراجع صورة الأيقونة داخل النافذة بالنظر.
+## 7.8 OCR and capture
 
-## Phase 4 --- Audio Queue وCache
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| OCR-001 | Windows OCR | Done | English. If it is missing: Settings, Time & language, Language & region, English optical character recognition |
+| OCR-002 | Capture | Partial | A 24×24 GDI copy worked. Windows Graphics Capture is written and was not used on a live Palia window |
+| OCR-003 | Find the Palia window | Partial | Rules are tested. A running process was not inspected |
+| OCR-004 | Dialogue region | Partial | The Kenyatta suggestion matches the bottom-left card in that screenshot. It still needs a live pass |
+| OCR-005 | Read text | Partial | Read "Kilima" from a drawn image, and the Kenyatta fixture after cleanup. Not from the live UI |
+| OCR-006 | Clean text | Done | `TextNormalizer` and its tests |
+| OCR-007 | Detect change | Done | Start, change, and end in `DialogueTracker` |
+| OCR-008 | Skip the same text | Done | Duplicate window is unit-tested |
+| OCR-009 | Unclear text | Partial | Empty text and text that is still changing are not accepted. Windows OCR does not give one confidence score |
+| OCR-010 | OCR on the live game | Not verified | Needs Palia and a look at the capture |
 
--   بناء Queue.
--   منع تداخل الكلام.
--   ترتيب الحوارات.
--   سياسة إلغاء الحوار السابق.
--   Stop/Pause/Resume حسب الحاجة.
--   Cache Key ثابت.
--   تخزين الصوت الناتج.
--   تنظيف Cache.
+Process names, in order: `PaliaClientSteam-Win64-Shipping`, `PaliaClient-Win64-Shipping`, the test builds, `PaliaClientSteam`, `Palia`, then an exact window title `Palia`. The client must be at least 640×480. `IsBorderRequired` is false when the OS build is 22000 or newer.
 
-**شرط الإغلاق:** عدم تداخل الأصوات وعدم إعادة توليد النصوص المخزنة عند
-تطابق كل إعدادات التوليد.
+Speaker rules already in code:
 
-## Phase 5 --- Settings وReliability
+- A plate is the name, or the name plus trailing number groups (`Kenyatta 0 0`).
+- Matching stops at the first spoken sentence. A name inside a sentence is not the speaker.
+- `Eshe` then `Skip` then the line matches Eshe. `Nai'o` matches id `naio`.
+- Lines that start with `(`, `[`, or `chat with ` are prompts, not speech.
+- Do not spell-correct `hoppu`.
 
--   إعدادات التطبيق.
--   إعدادات OCR.
--   إعدادات Backend.
--   إعدادات الصوت.
--   إعدادات الشخصيات.
--   Logging.
--   Error handling.
--   معالجة فشل CUDA والعودة إلى CPU.
--   اختبار جلسات لعب طويلة.
+## 7.9 NPC voices
 
-## Phase 6 --- Packaging وDistribution
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| NPC-001 | Voice profile model | Done | `NpcProfile` and `VoiceLibraryState` |
+| NPC-002 | NPC list | Done | 29 villagers plus Unknown, from `npc-voices.json` |
+| NPC-003 | Bind a voice id | Done | Default in the roster JSON. User change in `voices.json` |
+| NPC-004 | Read the name from the screen | Partial | From the name plate in OCR text. Not tried inside the game |
+| NPC-005 | Identification rules | Done | Plate only. A mentioned name does not match |
+| NPC-006 | Unknown speaker | Done | Unknown card and `af_bella`, unless the user overrode it |
+| NPC-007 | Per-character voice and pace | Partial | Voice edits are saved. Pace is sent to Kokoro. T1 has not compared two files |
+| NPC-008 | Tests | Partial | Kenyatta, Eshe, and Nai'o unit tests, plus the roster test that Kenyatta stays `af_sky`. No live test |
 
--   نشر CPU version.
--   إعداد NVIDIA optional runtime.
--   إدارة تنزيل النموذج.
--   التحقق من سلامة ملفات النموذج.
--   تجهيز Installer.
--   توثيق التراخيص.
--   اختبار نظيف على جهاز Windows آخر.
--   اختبار إزالة البرنامج.
+## 7.10 Storage
 
-------------------------------------------------------------------------
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| DATA-001 | SQLite | Decided only | No package and no database. Do not add SQLite unless a task needs it |
+| DATA-002 | Create the database | Not started | |
+| DATA-003 | Store voice profiles | Partial | Roster JSON plus `voices.json`. Not SQLite |
+| DATA-004 | Store settings | Partial | `capture.json`. No general settings service |
+| DATA-005 | Audio cache | Not started | Phase 4 |
+| DATA-006 | Cache key | Not started | Must include text, voice, pace, model hash, and engine version |
+| DATA-007 | Cache cleanup | Not started | |
+| DATA-008 | Schema migration | Not started | |
 
-# 10. بروتوكول Benchmark التفصيلي
+## 7.11 Distribution
 
-## 10.1 بيئة الاختبار
+| ID | Task | Status | Detail |
+| --- | --- | --- | --- |
+| DIST-001 | Design for later distribution | Decided only | No installer |
+| DIST-002 | Self-contained publish | Not started | |
+| DIST-003 | CPU installer | Not started | |
+| DIST-004 | NVIDIA installer | Not started | |
+| DIST-005 | Model download | Partial | First-run download exists. There is no manager window |
+| DIST-006 | File hash check | Not started | See TTS-014 |
+| DIST-007 | OS requirement check | Not started | |
+| DIST-008 | Auto-update | Not started | |
+| DIST-009 | Uninstaller | Not started | |
+| DIST-010 | Third-party notices | Not started | Required before distribution |
+| DIST-011 | Test on a second PC | Not started | |
+| DIST-012 | Code signing | Deferred | Decide before any public release |
 
-يجب تسجيل البيانات التالية في كل جلسة: - موديل الجهاز والمعالج. - اسم
-GPU وVRAM. - حجم RAM. - إصدار Windows. - إصدار تعريف NVIDIA. - إصدار
-KokoroSharp. - إصدار ONNX Runtime. - إصدار CUDA/cuDNN عند استخدام
-CUDA. - نسخة نموذج Kokoro وHash. - دقة اللعبة وإعدادات الرسوم. - وضع
-الطاقة في Windows وArmoury Crate. - هل الجهاز موصول بالشاحن؟ - هل تعمل
-برامج ثقيلة أخرى؟
+---
 
-## 10.2 سيناريوهات الاختبار
+# 8. What the app does today
 
-  Test ID   السيناريو                          الغرض
-  --------- ---------------------------------- --------------------------
-  BM-001    Palia فقط لمدة 10 دقائق            Baseline
-  BM-002    TTS CPU --- 2 Threads دون اللعبة   قياس CPU
-  BM-003    TTS CPU --- 3 Threads دون اللعبة   قياس CPU
-  BM-004    TTS CPU --- 4 Threads دون اللعبة   قياس CPU
-  BM-005    TTS CUDA دون اللعبة                قياس GPU
-  BM-006    Palia + TTS CPU                    أثر CPU على اللعبة
-  BM-007    Palia + TTS CUDA                   أثر GPU على اللعبة
-  BM-008    Palia + OCR فقط                    تكلفة OCR
-  BM-009    Palia + OCR + TTS                  سيناريو الاستخدام الكامل
-  BM-010    جلسة لعب 30--60 دقيقة              الاستقرار والذاكرة
+The window opens on VoiceBox. Each card is a villager. The right panel sets that card's Kokoro voice and pace, and the microphone previews it. Apply voice speaks a newly captured line with the matched card. Hear yourself only gates automatic playback; the microphone and Generate still play. Live capture toggles the monitor.
 
-## 10.3 مجموعة النصوص
+Voicestudio still has backend, voice, threads, the dialogue box, Generate, Play, and Stop. Settings has the capture region, preview, and monitor.
 
-ينشأ ملف اختبار يحتوي على 20 جملة إنجليزية على الأقل: - جمل قصيرة جداً. -
-جمل متوسطة. - جمل طويلة. - علامات ترقيم. - أسماء وأماكن. - أرقام
-واختصارات عند الحاجة.
+Files:
 
-يجب استخدام النصوص نفسها والصوت نفسه والإعدادات نفسها عند مقارنة CPU
-وCUDA.
+| File | Role |
+| --- | --- |
+| `%LOCALAPPDATA%\PaliaVoiceAI\models\kokoro.onnx` | Kokoro model |
+| `%LOCALAPPDATA%\PaliaVoiceAI\voices.json` | User voice, pace, favorites, selected id, Apply voice, Hear yourself |
+| `%LOCALAPPDATA%\PaliaVoiceAI\npc-voices.json` | Optional newer copy of the roster |
+| `%LOCALAPPDATA%\PaliaVoiceAI\capture.json` | Region and monitor settings |
+| `%LOCALAPPDATA%\PaliaVoiceAI\benchmarks.csv` | Benchmark rows |
+| `%LOCALAPPDATA%\PaliaVoiceAI\last-capture.bmp` | Last capture |
+| `npc-voices.json` beside the exe | Shipped roster |
+| `Avatars\*.png` beside the exe | Wiki profile icons |
 
-## 10.4 المقاييس
+Limits that are still true:
 
-### Generation Time
+1. CUDA does not run on this ONNX package.
+2. Mock is silent and is not a quality sample.
+3. Mock RTF is not a TTS measurement.
+4. The model is downloaded into the user profile. It is not inside an installer.
+5. Speaker matching is proven on text, not on a live Palia window.
+6. There is no audio cache.
+7. This build is not a distributable release.
+8. Stop does not cut Kokoro mid-sentence.
 
-الزمن من بدء طلب التوليد حتى اكتمال الملف الصوتي.
+---
 
-### First Audio Latency
+# 9. Phases
 
-الزمن من وصول الحوار إلى التطبيق حتى أول جزء صوتي قابل للتشغيل. إذا لم
-يدعم المحرك Streaming، يسجل الزمن حتى اكتمال أول ملف صوتي.
+## Phase 1 — Kokoro in the app
 
-### Audio Duration
+**Close when:** Kokoro speaks on CPU, CUDA is tried when the runtime can do it, and the numbers can be measured again.
 
-مدة الصوت الناتج.
+**2026-11-17:** CPU is closed. The sentence, voice, timings, hash, and playback are in section 7.4. CUDA fell back to CPU. Listening quality was not judged. Impact while Palia is running was not measured.
 
-### Real-Time Factor
+| ID | Task | Status |
+| --- | --- | --- |
+| P1-001 | WPF solution | Done |
+| P1-002 | Wire the window to Kokoro | Done |
+| P1-003 | `ITtsEngine` | Done |
+| P1-004 | Silent mock | Done |
+| P1-005 | Pin KokoroSharp 0.8.4 | Done |
+| P1-006 | Local `kokoro.onnx` | Done |
+| P1-007 | `KokoroTtsEngine` | Done |
+| P1-008 | CPU speech | Done |
+| P1-009 | CUDA speech | Partial. Fallback only |
+| P1-010 | One CPU measurement | Done |
+| P1-011 | Listen and compare voices | Not started |
+| P1-012 | Run beside Palia | Not started |
 
-`RTF = Generation Time / Audio Duration`
+## Phase 2 — OCR and capture
 
--   أقل من 1: التوليد أسرع من زمن تشغيل الصوت.
--   يساوي 1: التوليد يستغرق تقريباً مدة الصوت نفسها.
--   أكبر من 1: التوليد أبطأ من تشغيل الصوت.
+**Close when:** A new dialogue line is captured once, and the same text is not sent to TTS again inside the duplicate window.
 
-### Game Performance
+**2026-11-17:** Stability, cleanup, and duplicate logic are unit-tested. Windows OCR read drawn English text. A small GDI capture worked. The Palia window itself was not captured, so this phase is not closed.
 
--   Average FPS.
--   1% Low FPS.
--   Frame-time consistency.
--   GPU utilization.
--   VRAM usage.
--   CPU utilization.
--   RAM usage.
+## Phase 3 — NPC voice profiles
 
-## 10.5 معايير القبول الأولية
+**Close when:** Known dialogue selects that villager's profile, and an unidentified speaker has an obvious fallback.
 
-  المقياس                                       الهدف الأولي
-  ----------------------------- ----------------------------
-  Average FPS regression                                ≤ 5%
-  1% Low regression                                    ≤ 10%
-  First Audio Latency             أقل من 1 ثانية قدر الإمكان
-  Audio overlap                                          صفر
-  Lost dialogue                       صفر في مجموعة الاختبار
-  Crash during 30-minute test                            صفر
-  Unbounded memory growth                                صفر
+**2026-11-17:** The text side of that close is in place and unit-tested. Unknown is the fallback. The window can change the voice. Pace is wired and not compared (T1). Live selection is T2. Mapping-file voice suggestions were not applied.
 
-يجب عدم اعتبار هذه القيم متحققة إلا بعد الاختبار الفعلي.
+Work items inside the phase:
 
-## 10.6 نموذج جدول النتائج
+- NPC model, profile, roster file, stable voice id, UI editing, and Unknown: done.
+- Speed: wired, waiting on T1.
+- Pitch: not supported by this Kokoro call. Do not fake it.
 
-  -------------------------------------------------------------------------------------------
-  Test       Backend     Threads Avg FPS  1% Low    VRAM     RAM   Generation   Audio     RTF
-                                                                           ms      ms 
-  ---------- --------- --------- ------- ------- ------- ------- ------------ ------- -------
-  Baseline   None            ---     ---     ---     ---     ---          ---     ---     ---
+## Phase 4 — Queue and cache
 
-  BM-006     CPU               2     ---     ---     ---     ---          ---     ---     ---
+- One speaker at a time.
+- A clear rule for an old line when a new line arrives.
+- Stop, and pause or resume only if a task asks for them.
+- A stable cache key and a place to delete old files.
 
-  BM-006     CPU               3     ---     ---     ---     ---          ---     ---     ---
+**Close when:** Speech does not overlap, and a stored line is not generated again when the text, voice, pace, and model match.
 
-  BM-006     CPU               4     ---     ---     ---     ---          ---     ---     ---
+## Phase 5 — Settings and reliability
 
-  BM-007     CUDA            ---     ---     ---     ---     ---          ---     ---     ---
-  -------------------------------------------------------------------------------------------
+- The rest of the settings, logging, and a long session.
+- CUDA failure must keep the CPU path. That fallback already exists.
 
-------------------------------------------------------------------------
+## Phase 6 — Packaging
 
-# 11. إدارة الحوار والشخصيات
+- CPU publish, optional NVIDIA runtime, model download, hash check, installer, license notices, a clean install on another PC, and uninstall.
 
-## 11.1 مسار معالجة الحوار المستهدف
+---
 
-``` text
-Screen Capture
-    ↓
-OCR
-    ↓
-Text Normalization
-    ↓
-Dialogue Change Detection
-    ↓
-Duplicate Filter
-    ↓
-NPC Identification
-    ↓
-Voice Profile Lookup
-    ↓
-Audio Cache Lookup
-    ↓
-TTS Generation (if cache miss)
-    ↓
-Audio Queue
-    ↓
-Playback
+# 10. Benchmark protocol
+
+Use this when a task says to measure. Do not fill the result table with guesses.
+
+## 10.1 Record every session
+
+Machine model, CPU, GPU name and VRAM, RAM, Windows build, NVIDIA driver, KokoroSharp version, ONNX Runtime version, CUDA/cuDNN versions if used, model hash, game resolution and graphics settings, Windows and Armoury Crate power mode, whether the laptop is plugged in, and what else is running.
+
+## 10.2 Scenes
+
+| ID | Scene | Purpose |
+| --- | --- | --- |
+| BM-001 | Palia alone for 10 minutes | Baseline |
+| BM-002 | TTS CPU, 2 threads, game closed | CPU cost |
+| BM-003 | TTS CPU, 3 threads, game closed | CPU cost. One sentence at 3 threads is already recorded |
+| BM-004 | TTS CPU, 4 threads, game closed | CPU cost |
+| BM-005 | TTS CUDA, game closed | GPU cost. Blocked until a GPU build exists |
+| BM-006 | Palia plus TTS CPU | Effect on the game |
+| BM-007 | Palia plus TTS CUDA | Effect on the game |
+| BM-008 | Palia plus OCR only | OCR cost |
+| BM-009 | Palia plus OCR plus TTS | Full loop |
+| BM-010 | 30–60 minutes of play | Stability and memory |
+
+## 10.3 Text set
+
+Create at least 20 English lines: very short, medium, long, punctuation, names and places, and a few numbers. Compare CPU and CUDA with the same lines, the same voice, and the same settings. That file does not exist yet.
+
+## 10.4 Metrics
+
+- **Generation time:** from the request to a finished WAV.
+- **First-audio latency:** from the accepted dialogue line to the first playable audio. Without streaming, that is the full file time.
+- **Audio duration:** length of the WAV.
+- **RTF:** generation time / audio duration. Below 1 means generation is faster than playback.
+- **Game:** average FPS, 1% low, frame-time consistency, GPU, VRAM, CPU, RAM.
+
+## 10.5 Proposed gates
+
+| Metric | Gate |
+| --- | --- |
+| Average FPS | 5% drop or less |
+| 1% low | 10% drop or less |
+| First audio | Under one second when possible |
+| Overlapping audio | None |
+| Lost lines in the test set | None |
+| Crash in 30 minutes | None |
+| Unbounded memory growth | None |
+
+Do not mark a gate passed until that scene was run.
+
+---
+
+# 11. Dialogue path
+
+```text
+Screen capture
+  -> OCR
+  -> Text normalization
+  -> Wait until the text is stable
+  -> Drop a duplicate
+  -> Name-plate match, else Unknown
+  -> Voice and pace from the roster, then the user override
+  -> Cache lookup          (not built)
+  -> Kokoro if there was no cache hit
+  -> Queue                 (not built)
+  -> Play
 ```
 
-## 11.2 قواعد مهمة
+Rules:
 
--   لا يرسل OCR كل Frame إلى TTS.
--   يجب اكتشاف أن النص استقر قبل اعتباره حواراً جديداً.
--   يجب إزالة النصوص المكررة.
--   يجب أن تتضمن Cache Key النص، Voice ID، إعدادات الصوت، إصدار النموذج،
-    وأي إعداد يؤثر على الناتج.
--   لا يعتمد تحديد الشخصية على تخمين LLM في الإصدار الأول إذا كانت هناك
-    إشارة مرئية موثوقة.
--   عند غموض الشخصية، يجب استخدام صوت افتراضي أو إتاحة اختيار المستخدم،
-    لا إسناد صوت عشوائي.
--   يجب فصل النص المعروض عن اسم الشخصية وعن أي عناصر UI أخرى.
+- Do not send every captured frame to TTS.
+- Wait for the stable-read count before treating a line as new.
+- Remove duplicates inside the duplicate window.
+- A future cache key needs the normalized text, voice id, pace, model hash, output format, and engine version. The text alone is not enough.
+- Do not use an LLM to guess the speaker when the name plate is missing.
+- If the speaker is unclear, use Unknown. Do not assign a random voice.
+- Keep the spoken line separate from the name plate and from UI prompts.
 
-------------------------------------------------------------------------
+---
 
-# 12. إدارة الملفات والإعدادات
+# 12. Safety
 
-## 12.1 المسارات المقترحة
+- Capture only what is on screen.
+- Do not read the Palia process memory.
+- Do not inject code or change game files.
+- Do not try to bypass anti-cheat.
+- Do not upload screenshots or dialogue in the local mode.
+- Read Palia's terms before distributing the program or telling other people to use it with the game.
+- Respect the TTS model, voice, and library licenses.
+- Do not market these voices as the original actors.
 
-``` text
-%LOCALAPPDATA%\PaliaVoiceAI\
-    settings.json
-    logs\
-    cache\
-    benchmarks\
-    database\
-    models\
-```
+---
 
-يمكن لاحقاً فصل ملفات النموذج الكبيرة في مجلد مستقل يختاره المستخدم.
+# 13. Open risks
 
-## 12.2 Cache Key المقترح
+| ID | Risk | What to do |
+| --- | --- | --- |
+| R-001 | KokoroSharp and a future ONNX GPU build may not match | Pin both versions and speak one sentence before writing more GPU code |
+| R-002 | CUDA and cuDNN mismatch | Install only the versions named for that ONNX build |
+| R-003 | GPU speech hurts the game | Compare CPU and CUDA while Palia is running before enabling CUDA |
+| R-004 | OCR reads UI that is not dialogue | Keep the region tight and the cleanup rules |
+| R-005 | OCR drops part of a line | The stable-read count is the current protection. Add a merge only if a live capture shows a split line |
+| R-006 | Wrong speaker | Trust the name plate. Unknown is the fallback |
+| R-007 | A name is pronounced badly | Listening test. Do not spell-correct game text such as `hoppu` |
+| R-008 | The installer is huge because of the model | Keep the on-demand download |
+| R-009 | Other PCs differ | CPU must work. GPU stays optional |
+| R-010 | Game terms | Review before distribution |
+| R-011 | Redistribution rights | Finish TTS-015 and ship notices |
+| R-012 | Long lines feel late | Queue and cache come after a listening check, not before |
 
-يجب أن يتكون من: - Normalized text. - Voice ID. - Model ID. - Model
-version/hash. - Speech speed. - Pitch أو إعدادات النبرة إن كانت
-مدعومة. - Output format. - TTS engine version.
+Still undecided:
 
-لا تستخدم النص وحده كمفتاح Cache؛ لأن الجملة نفسها قد تنتج صوتاً مختلفاً
-عند تغيير Voice Profile أو إعدادات النموذج.
+1. Which ONNX Runtime GPU package, if CUDA stays a goal. The CPU package is 1.22.0.
+2. CUDA or DirectML. The current package uses CPU.
+3. The live dialogue region. T3.
+4. Whether Unknown should stay silent when Apply voice is on. Today it speaks with `af_bella`.
+5. Final voice casting. Only `af_bella` has been heard. Do not change the JSON ids as part of a cleanup.
+6. Cache size and eviction.
+7. Installer and update mechanism.
+8. Which FPS tool to trust.
 
-------------------------------------------------------------------------
+---
 
-# 13. الأمان والخصوصية والتوافق مع اللعبة
+# 14. First release
 
--   يلتزم البرنامج بالتقاط الشاشة المرئية فقط.
--   لا يقرأ ذاكرة عملية Palia.
--   لا يحقن DLL أو كوداً في عملية اللعبة.
--   لا يعدل ملفات اللعبة أو يستبدل ملفات الصوت.
--   لا يحاول تجاوز أنظمة الحماية أو مكافحة الغش.
--   لا يرسل صور الشاشة أو النصوص إلى خدمات خارجية في الوضع المحلي.
--   يجب مراجعة شروط استخدام Palia وأي سياسات ذات صلة قبل توزيع البرنامج
-    أو استخدامه مع اللعبة.
--   يجب احترام تراخيص نموذج TTS والأصوات والمكتبات.
--   لا يجوز تسويق أصوات TTS باعتبارها أصوات الممثلين الأصليين دون حقوق
-    واضحة.
+| Check | State |
+| --- | --- |
+| Starts on this Windows 11 PC | Done |
+| Kokoro speaks locally | Done |
+| CPU path works | Done |
+| NVIDIA path works or falls back to CPU | Fallback done. GPU speech not done |
+| OCR reads a live Palia card | Not done |
+| The same line is not read again for no reason | Logic tested. Live use not done |
+| Known dialogue selects the right profile | Text fixtures only |
+| Each villager has a profile | Done. Six villagers have no voice id yet |
+| Speech does not overlap | Not done |
+| Stop cuts the current audio | Playback yes. Mid-synthesis no |
+| Cache works | Not done |
+| FPS gates | Not measured |
+| Another PC can install it | Not done |
+| Licenses reviewed for distribution | Not done |
 
-------------------------------------------------------------------------
+---
 
-# 14. المخاطر والقرارات المفتوحة
+# 15. Changelog
 
-  -----------------------------------------------------------------------
-  ID                المخاطرة/السؤال   التأثير           الإجراء
-  ----------------- ----------------- ----------------- -----------------
-  R-001             عدم توافق         مرتفع             تثبيت نسخ محددة
-                    KokoroSharp مع                      واختبارها قبل
-                    إصدار ONNX                          كتابة Adapter
-                    Runtime المختار                     النهائي
+| Date | Update |
+| --- | --- |
+| 2026-11-17 | Project defined: local TTS for Palia NPC dialogue. C#, .NET 8, WPF, Kokoro 82M, ONNX Runtime. Reference PC recorded. CPU is the required path and CUDA is optional. |
+| 2026-11-17 | Phase 1 starter: WPF, Core, silent Mock, NAudio. Release solution mapping fixed. Benchmark CSV is kept and reloaded. Stop cancels a download and stops playback. CPU and CUDA no longer fall through to Mock. |
+| 2026-11-17 | Phase 2: capture, Windows OCR, cleanup, stability, and duplicates. 24 tests passed at that point. Live Palia OCR was not run. |
+| 2026-11-17 | Kokoro CPU speech. First run downloaded the model. After that, 1,598 ms generation, 4,510 ms audio, RTF 0.354, voice `af_bella`. CUDA fell back to CPU. |
+| 2026-11-17 | Phase 3 voice library. Name-plate matching tested on text. Then the roster moved to `npc-voices.json` with 28 wiki icons. Existing voice ids were kept. 29 tests passed. Taylin has no wiki icon. Portrait pixels were not reviewed by eye. |
+| 2026-11-17 | This document was rewritten in English. Stale rows that called finished CPU speech, voice profiles, and playback "not started" were aligned with the checks above. Open work is T1, T2, T3, then T4. |
 
-  R-002             تعارض CUDA/cuDNN  مرتفع             عدم تثبيت حزم
-                                                        عشوائية؛ اتباع
-                                                        متطلبات النسخة
-                                                        المثبتة
+---
 
-  R-003             استهلاك GPU يؤثر  مرتفع             مقارنة CPU/CUDA
-                    على اللعبة                          أثناء اللعب
+# 16. How to update this document
 
-  R-004             OCR يقرأ نصوص UI  متوسط             تحديد Region
-                    غير الحوار                          واختبار قواعد
-                                                        التنقية
+When a task is finished:
 
-  R-005             OCR يفقد أجزاء من مرتفع             ثبات النص ودمج
-                    الحوار                              النتائج المتتابعة
-                                                        عند الحاجة
+1. Change its status to Partial or Done.
+2. Name the files or types that changed.
+3. Name the check that was run.
+4. Write the result: counts, timings, or the text that was read.
+5. Add a changelog row with the date.
+6. Leave the task Partial if the live game, a listening check, or a second PC was required and did not happen.
 
-  R-006             تحديد NPC بشكل    مرتفع             استخدام إشارات
-                    خاطئ                                مرئية موثوقة
-                                                        وخيار fallback
-
-  R-007             صوت غير طبيعي     متوسط             اختبار نطق
-                    لبعض الأسماء                        وإعدادات
-                                                        pronunciation
-
-  R-008             كبر حجم Installer متوسط             تنزيل النموذج عند
-                    بسبب النموذج                        الطلب
-
-  R-009             اختلاف أجهزة      مرتفع             CPU baseline وGPU
-                    المستخدمين                          optional
-
-  R-010             قيود شروط اللعبة  مرتفع             مراجعة الشروط قبل
-                                                        التوزيع
-
-  R-011             حقوق إعادة توزيع  مرتفع             مراجعة التراخيص
-                    النموذج/الأصوات                     وتضمين notices
-
-  R-012             تأخر الصوت بسبب   متوسط             Chunking وQueue
-                    توليد الجمل                         وCache بعد اختبار
-                    الطويلة                             الجودة
-  -----------------------------------------------------------------------
-
-## قرارات ما زالت تحتاج حسم
-
-1.  نسخة ONNX Runtime GPU، إن بقي مسار CUDA مطلوباً. نسخة CPU المثبتة هي 1.22.0.
-2.  مسار CUDA أو DirectML النهائي. الحزمة الحالية ترجع إلى CPU.
-3.  طريقة الحصول على OCR Region من نافذة اللعبة أثناء اللعب.
-4.  سياسة تحديد NPC عند غياب اسم ظاهر.
-5.  قائمة الأصوات النهائية للشخصيات. `af_bella` فقط هو الذي نُطق.
-6.  سياسة Cache وحجمها الأقصى.
-7.  طريقة التثبيت والتحديث النهائية.
-8.  آلية قياس FPS التي ستستخدم في الاختبارات.
-
-KokoroSharp.CPU 0.8.4 مثبّت، ونموذج Kokoro 82M float32 من
-`KokoroSharpBinaries` v2.0.0 هو الملف الذي ولّد الصوت. ترخيص المكتبة MIT،
-وترخيص النموذج والأصوات Apache-2.0 حسب وصف الحزمة. مراجعة التوزيع ما زالت
-مفتوحة.
-
-------------------------------------------------------------------------
-
-# 15. تعريف الإنجاز النهائي
-
-يعتبر الإصدار الأول قابلاً للاستخدام عندما تتحقق جميع النقاط التالية:
-
--   [x] التطبيق يعمل على Windows 11 دون أخطاء بدء تشغيل.
--   [x] Kokoro يولد كلاماً حقيقياً محلياً.
--   [x] يعمل مسار CPU بصورة مستقرة.
--   [x] يعمل مسار NVIDIA GPU على الأجهزة المتوافقة، أو يعود بأمان إلى
-    CPU.
--   [ ] يستطيع OCR استخراج حوار Palia من منطقة الشاشة المحددة.
--   [ ] لا يعيد قراءة الحوار نفسه بلا داعٍ.
--   [ ] يربط الحوار بالشخصية المناسبة وفق قواعد موثوقة.
--   [ ] لكل شخصية Voice Profile ثابت.
--   [ ] لا تتداخل الأصوات.
--   [ ] يمكن إيقاف الصوت فوراً.
--   [ ] يعمل Cache.
--   [ ] يحقق Benchmark معايير الأداء المتفق عليها.
--   [ ] لا يحدث تدهور غير مقبول في تجربة اللعبة.
--   [ ] يعمل التطبيق على جهاز Windows آخر عبر Installer.
--   [ ] تمت مراجعة التراخيص والاعتماديات.
-
-------------------------------------------------------------------------
-
-# 16. سجل التحديثات
-
-  -----------------------------------------------------------------------
-  التاريخ                             التحديث
-  ----------------------------------- -----------------------------------
-  2026-11-17                          تحديد فكرة المشروع: إضافة أصوات TTS
-                                      محلية لحوارات NPC في Palia
-
-  2026-11-17                          اختيار C# و.NET 8 وWPF كمنصة
-                                      التطبيق
-
-  2026-11-17                          اختيار Kokoro 82M كمرشح أول لمحرك
-                                      TTS
-
-  2026-11-17                          تحديد ONNX Runtime كمسار inference
-
-  2026-11-17                          تحديد جهاز الاختبار: ROG Strix G16
-                                      G614PH-RV161W
-
-  2026-11-17                          اعتماد أولوية Balanced بين أداء
-                                      اللعبة وسرعة الصوت
-
-  2026-11-17                          إنشاء Phase 1 Starter: WPF/Core/TTS
-                                      Mock/NAudio
-
-  2026-11-17                          توثيق أن Mock ينتج WAV صامتاً ولا
-                                      يمثل TTS حقيقياً
-
-  2026-11-17                          اعتماد التوزيع المستقبلي كهدف
-                                      تصميمي مع CPU أساسي وNVIDIA اختياري
-
-  2026-11-17                          إصلاح Release في ملف الحل، واستمرار
-                                      سجل Benchmark، وإلغاء التوليد عند
-                                      Stop، ومنع اختيار CPU/CUDA بصمت.
-                                      تنفيذ Phase 2: التقاط الشاشة ونافذة
-                                      Palia، وWindows OCR، وتنقية النص،
-                                      وكشف التغيّر والتكرار. التحقق:
-                                      21 اختباراً ناجحاً وبناء Debug
-                                      وRelease. اختبار OCR داخل اللعبة
-                                      لم يُنفَّذ
-
-  2026-11-17                          وصل Kokoro 82M عبر KokoroSharp.CPU
-                                      0.8.4. أول تشغيل نزّل النموذج
-                                      (325,508,342 بايت). بعد وجود الملف،
-                                      توليد CPU استغرق 1,598 مللي ثانية
-                                      مقابل 4,510 مللي ثانية صوت، RTF‏
-                                      0.354، بصوت af_bella. طلب CUDA رجع
-                                      إلى CPU. بناء Debug وRelease بلا
-                                      تحذيرات، و24 اختباراً ناجحاً
-
-  2026-11-17                          واجهة Phase 3 على شكل مكتبة أصوات.
-                                      23 NPC مع Unknown، وربط صوت محفوظ،
-                                      وتعرف على لوحة الاسم في النص.
-                                      الاختبارات 28. المعاينة الحية داخل
-                                      Palia لم تُجرَ
-
-  2026-11-17                          قائمة الشخصيات أصبحت `npc-voices.json`
-                                      مع أيقونات الويكي في `Avatars`.
-                                      أصوات Kokoro الحالية بقيت كما هي.
-                                      الاختبارات 29. Taylin بلا أيقونة
-                                      على الويكي. لم تُراجع الأيقونات
-                                      بالنظر داخل النافذة
-  -----------------------------------------------------------------------
-
-------------------------------------------------------------------------
-
-# 17. طريقة تحديث هذه الوثيقة
-
-هذه الوثيقة يجب أن تتغير مع تقدم التنفيذ.
-
-عند إكمال أي مهمة: 1. غيّر حالتها من «غير منفذ» إلى «منفذ جزئياً» أو
-«منفذ». 2. اكتب الملفات أو الـClasses التي تم تعديلها. 3. اذكر اختبار
-التحقق الذي تم تشغيله. 4. سجل نتيجة الاختبار، وليس مجرد أنه تم تشغيله.
-5. أضف تاريخ التحديث إلى سجل التغييرات. 6. لا تعتبر مهمة التوافق مكتملة
-لمجرد نجاح Restore أو تثبيت NuGet؛ يجب اختبار الوظيفة الفعلية.
-
-**قاعدة أساسية:** لا تكتب «منفذ» لمهمة لم يتم التحقق من سلوكها. حافظ على
-الفصل بين القرار المعماري، والكود الموجود، والاختبار الناجح.
-
-------------------------------------------------------------------------
-
-**نهاية الوثيقة --- Palia Voice AI Project Master Document**
+Do not write Done for a behavior that was not observed.
