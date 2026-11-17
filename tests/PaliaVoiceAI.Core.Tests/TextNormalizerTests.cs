@@ -21,6 +21,7 @@ public class TextNormalizerTests
     public void Drops_skip_and_continue_prompts()
     {
         Assert.Equal("Welcome to Kilima.", TextNormalizer.Normalize("Eshe\nSkip\nWelcome to Kilima.\nPress F to continue"));
+        Assert.Equal("Welcome to Kilima.", TextNormalizer.Normalize("Eshe\nWelcome to Kilima.\nPress Ente'"));
     }
 
     [Fact]
@@ -30,6 +31,18 @@ public class TextNormalizerTests
         Assert.Equal(
             "I'd wish you a hoppu Luna New Year, but I'm so ready for it to be over already.",
             TextNormalizer.Normalize(raw));
+    }
+
+    [Fact]
+    public void Drops_a_name_plate_when_badge_text_shares_that_line()
+    {
+        var raw = "Einar I -\nSometimes I like to go watch the familial\nunit known as Daiya eat dinner at night.";
+        Assert.Equal(
+            "Sometimes I like to go watch the familial unit known as Daiya eat dinner at night.",
+            TextNormalizer.Normalize(raw));
+        Assert.Equal(
+            "Sometimes I like to go watch the familial unit known as Daiya eat dinner at night.",
+            TextNormalizer.Normalize("Einar • VI -\nSometimes I like to go watch the familial\nunit known as Daiya eat dinner at night."));
     }
 
     [Fact]

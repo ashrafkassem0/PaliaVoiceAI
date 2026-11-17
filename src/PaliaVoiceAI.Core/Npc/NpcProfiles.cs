@@ -168,6 +168,7 @@ public static class SpeakerIdentifier
 
         var named = (npcs ?? NpcCatalog.All)
             .Where(profile => !string.Equals(profile.Id, NpcCatalog.Unknown.Id, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(profile => profile.Name.Length)
             .ToArray();
 
         foreach (var line in Lines(raw))
@@ -195,23 +196,16 @@ public static class SpeakerIdentifier
 
     private static string? MatchLine(string line, IReadOnlyList<NpcProfile> npcs)
     {
-        var plate = StripCounters(line);
+        var plate = NamePlate.TrimBadge(line);
         foreach (var npc in npcs)
         {
             if (plate.Equals(npc.Name, StringComparison.OrdinalIgnoreCase))
                 return npc.Id;
+            if (NamePlate.HasBadgeSuffix(line, npc.Name))
+                return npc.Id;
         }
 
         return null;
-    }
-
-    private static string StripCounters(string line)
-    {
-        var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var end = parts.Length;
-        while (end > 0 && parts[end - 1].All(char.IsDigit))
-            end--;
-        return string.Join(' ', parts[..end]);
     }
 
     private static bool LooksSpoken(string line)
@@ -258,6 +252,48 @@ public static class SpeakerIdentifier
         }
 
         return buffer.ToString();
+    }
+}
+
+internal static class NamePlate
+{
+    public static string TrimBadge(string line)
+    {
+        var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var end = parts.Length;
+        while (end > 0 && IsBadgeToken(parts[end - 1]))
+            end--;
+        return string.Join(' ', parts[..end]);
+    }
+
+    public static bool HasBadgeSuffix(string line, string name)
+    {
+        if (name.Length == 0 || line.Length <= name.Length)
+            return false;
+        if (!line.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (!char.IsWhiteSpace(line[name.Length]))
+            return false;
+        return TrimBadge(line).Equals(name, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsBadgeToken(string token)
+    {
+        if (token.All(char.IsDigit))
+            return true;
+        if (token.Length == 1 && char.IsLetter(token[0]))
+            return true;
+        if (token.All(ch => char.IsPunctuation(ch) || char.IsSymbol(ch)))
+            return true;
+        if (token.Length is 0 or > 4)
+            return false;
+        foreach (var ch in token)
+        {
+            if (ch is not ('I' or 'V' or 'X'))
+                return false;
+        }
+
+        return true;
     }
 }
 

@@ -19,6 +19,22 @@ public class SpeakerIdentifierTests
     }
 
     [Fact]
+    public void Reads_Einar_when_friendship_badges_share_the_name_line()
+    {
+        var raw = "Einar I -\nSometimes I like to go watch the familial\nunit known as Daiya eat dinner at night.";
+        Assert.Equal("einar", SpeakerIdentifier.FindNpcId(raw));
+        Assert.Equal("einar", SpeakerIdentifier.FindNpcId("Einar • VI -\nSometimes I like to go watch the familial\nunit known as Daiya eat dinner at night."));
+    }
+
+    [Fact]
+    public void Does_not_select_a_name_that_only_appears_in_the_sentence()
+    {
+        var raw = "Einar\nSometimes I like to go watch the familial\nunit known as Daiya eat dinner at night.";
+        var roster = NpcCatalog.All.Append(new NpcProfile("daiya", "Daiya", "Farmer", "af_bella", "Test"));
+        Assert.Equal("einar", SpeakerIdentifier.FindNpcId(raw, roster));
+    }
+
+    [Fact]
     public void Does_not_treat_a_mentioned_name_as_the_speaker()
     {
         Assert.Null(SpeakerIdentifier.FindNpcId("I saw Eshe at the inn today."));

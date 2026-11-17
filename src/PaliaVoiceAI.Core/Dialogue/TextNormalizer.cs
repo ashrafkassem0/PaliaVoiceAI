@@ -31,7 +31,7 @@ public static partial class TextNormalizer
             if (line.Length == 0)
                 continue;
 
-            if (line.EndsWith('-') && i + 1 < lines.Length)
+            if (line.Length >= 2 && line[^1] == '-' && char.IsLetter(line[^2]) && i + 1 < lines.Length)
             {
                 var next = CleanLine(lines[i + 1]);
                 if (next.Length > 0 && char.IsLetter(next[0]))
@@ -41,7 +41,7 @@ public static partial class TextNormalizer
                 }
             }
 
-            if (IsUiChrome(line) || IsPrompt(line) || IsOnlyNumbers(line) || !ContainsLetterOrDigit(line))
+            if (IsUiChrome(line) || IsPrompt(line) || IsOnlyNumbers(line) || !ContainsLetterOrDigit(line) || IsBadgePlate(line))
                 continue;
 
             kept.Add(line);
@@ -131,7 +131,17 @@ public static partial class TextNormalizer
         return line.Contains('.') || line.Contains('?') || line.Contains('!') || line.Contains(',') || WordCount(line) >= 4;
     }
 
-    private static bool IsSpeakerPlate(string line) => SpeakerPlate().IsMatch(line);
+    private static bool IsSpeakerPlate(string line)
+    {
+        var trimmed = NamePlate.TrimBadge(line);
+        return trimmed.Length > 0 && SpeakerPlate().IsMatch(trimmed);
+    }
+
+    private static bool IsBadgePlate(string line)
+    {
+        var trimmed = NamePlate.TrimBadge(line);
+        return trimmed.Length > 0 && trimmed.Length < line.Length && SpeakerPlate().IsMatch(trimmed);
+    }
 
     private static bool IsPrompt(string line)
     {
@@ -178,12 +188,14 @@ public static partial class TextNormalizer
 
     private static bool IsUiChrome(string line)
     {
-        return UiLines.Contains(line) || PressToContinue().IsMatch(line);
+        return UiLines.Contains(line) ||
+            line.StartsWith("press ", StringComparison.OrdinalIgnoreCase) ||
+            PressToContinue().IsMatch(line);
     }
 
     [GeneratedRegex(@"^press\s+\S+\s+to\s+(continue|skip|close)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PressToContinue();
 
-    [GeneratedRegex(@"^(?:[A-Z][A-Za-z'\-]*)(?:\s+[A-Z][A-Za-z'\-]*){0,2}(?:\s+\d{1,3})*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?:[A-Z][A-Za-z'\-]*)(?:\s+[A-Z][A-Za-z'\-]*){0,2}(?:\s+(?:\d{1,3}|[A-Za-z]|-+))*$", RegexOptions.CultureInvariant)]
     private static partial Regex SpeakerPlate();
 }
