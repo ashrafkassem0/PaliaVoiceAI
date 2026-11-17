@@ -258,6 +258,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            _log.Error("playback", ex.GetType().Name);
             StatusText.Text = ex.Message;
         }
     }
@@ -288,6 +289,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            _log.Error("voices", ex.GetType().Name);
             StatusText.Text = ex.Message;
         }
     }

@@ -12,6 +12,25 @@ public sealed class AudioPlayer : ISpeechOutput, IDisposable
     private TaskCompletionSource? _done;
     private int _playId;
     private bool _stopRequested;
+    private float _volume = 1f;
+
+    public float Volume
+    {
+        get
+        {
+            lock (_gate)
+                return _volume;
+        }
+        set
+        {
+            lock (_gate)
+            {
+                _volume = Math.Clamp(value, 0f, 1f);
+                if (_output is not null)
+                    _output.Volume = _volume;
+            }
+        }
+    }
 
     public void PlayWav(byte[] wavBytes)
     {
@@ -56,6 +75,7 @@ public sealed class AudioPlayer : ISpeechOutput, IDisposable
                 output = new WaveOutEvent();
                 output.PlaybackStopped += (_, _) => FinishNaturally(playId);
                 output.Init(reader);
+                output.Volume = _volume;
                 _stream = stream;
                 _reader = reader;
                 _output = output;

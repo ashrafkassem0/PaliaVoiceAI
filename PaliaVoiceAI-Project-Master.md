@@ -32,9 +32,12 @@ This file is the source of truth. A task is not done because it is described her
 ```powershell
 dotnet test .\PaliaVoiceAI.sln --nologo
 dotnet build .\src\PaliaVoiceAI.App\PaliaVoiceAI.App.csproj -c Release --nologo
+dotnet publish .\src\PaliaVoiceAI.App\PaliaVoiceAI.App.csproj -c Release -r win-x64 --self-contained true -o .\artifacts\win-x64 --nologo
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\installer\Install.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\PaliaVoiceAI\Uninstall.ps1"
 ```
 
-Last full check on 2026-11-17: 40 tests passed (Core 37, OCR 3). Release build of the app succeeded with 0 warnings. The voice-library window listed Kenyatta, Eshe, Auni, Taylin, The Gardener, Ulfe, and Unassigned. The portrait pixels inside that window were not looked at. The Phase 4 queue and cache were checked in Core tests, not with a live Kokoro sentence and not with Palia.
+Last full check on 2026-11-17: 48 tests passed (Core 45, OCR 3). The CPU package published 526 files to `artifacts\win-x64`, including `coreclr.dll`, version 0.2.0.0. It installed for this user, the window title was `Palia Voice`, and uninstall removed the program, the Start menu shortcut, and the uninstall key. The Kokoro model stayed in the user profile. Another PC was not used.
 
 ---
 
@@ -46,10 +49,10 @@ Last full check on 2026-11-17: 40 tests passed (Core 37, OCR 3). Release build o
 | 2. OCR and capture | Read a new dialogue line once, and do not read the same line again | The live window was found and one Einar line was spoken once. The same line was not seen again inside the duplicate window, because the card advanced. |
 | 3. NPC voices | Pick the right voice profile for known dialogue, and do something clear when the speaker is unknown | Einar's name plate selected Einar. Daiya, named only in the sentence, was not selected. Pace `0.85` is longer than `1.15` for `af_bella`. A card with no name plate has not been captured. |
 | 4. Queue and cache | No overlapping speech, and no second generation when text, voice, and settings match | Checked in Core tests. A new line waits until the current line finishes playing. The same text, voice, pace, and model was not generated again. Stop drops a line that is still waiting. A live Kokoro sentence was not replayed from the cache, and Palia was not running. |
-| 5. Settings and reliability | Settings, logging, and a long play session | Not started, except the capture settings that already save and the cache folder delete button. |
-| 6. Installer | Another Windows PC can install and remove it | Not started. |
+| 5. Settings and reliability | Settings, logging, and a long play session | Partial. Backend, threads, the Voicestudio voice, and volume restore from `settings.json`. The log stores an error type and a timing, and a spoken line was not written. A long play session was not run. |
+| 6. Installer | Another Windows PC can install and remove it | Partial. This PC installed and removed the self-contained CPU package. Another PC was not used. The NVIDIA runtime was not packaged. |
 
-**Do this next:** T2 and T3 stay open. On 2026-11-17 the user said to skip those live checks and start Phase 4. Phase 4's tested close is recorded below. Do not start Phase 5 unless the user says to.
+**Do this next:** Open checks are listed in `PaliaVoiceAI-Open-Checks.md`. The largest ones are a second PC, a nameless dialogue card, the duplicate line, and a long play session. Do not start work that is not on that list unless the user asks.
 
 ---
 
@@ -105,6 +108,22 @@ Speaker `einar`, voice `bm_lewis`. Daiya is only in the sentence and was not sel
 
 **Cache key:** trimmed text, voice id, pace rounded to two decimals and clamped to `0.70`–`1.40`, lowercase SHA-256 of the model file, engine version `KokoroSharp 0.8.4`, content type `audio/wav`. Thread count and CPU/CUDA are not part of the key. Files are `{key}.wav` in `%LOCALAPPDATA%\PaliaVoiceAI\cache`. Settings has **Delete stored lines**. `SpeechCache.DeleteOlderThan` is not run on a timer, because the cache size is still undecided. Mock lines use hash `mock` and version `mock-1`, so they do not share files with Kokoro.
 
+## T5 — Phase 5 settings and log
+
+**Status:** Partial. The user said to run Phase 5. Settings and the log were checked on 2026-11-17. A long play session was not run.
+
+**Done when:** Backend, threads, the Voicestudio voice, and volume restore on launch. Errors and timings are logged without the dialogue line. A long play session has no crash and no unbounded memory growth.
+
+**2026-11-17 check.** Core tests: a missing settings file is CPU, 3 threads, `af_bella`, volume 100. `Cuda`, 4 threads, `bm_lewis`, and volume 40 round-tripped. A broken file loads those starting values. The sentence `Hello! Welcome to Kilima Village. How can I help you today?` was not kept when it was offered as a voice id. The same sentence was passed to the log as the error text and the voice id. The file contained `error speech Exception` and `voice=unknown`, with the character count and no `Kilima`. A log capped at 700 bytes with 2 older files kept `session.log`, `session.1.log`, and `session.2.log`, each at or under 700 bytes. Writing to a log path that is a file did not throw. The app cap is 512 KB, with the same two older files. The window title was `Palia Voice`. After `WM_CLOSE`, `%LOCALAPPDATA%\PaliaVoiceAI\settings.json` was backend `Cuda`, threads 4, voice `bm_lewis`, and volume 40, and those were the only fields. `capture.json` and `voices.json` were unchanged. No log line was written on that launch because nothing failed. The volume was not listened to. A crash was not provoked, so the handler that keeps the window open was not watched. CUDA was not requested. Palia was not running.
+
+## T6 — Phase 6 CPU package
+
+**Status:** Partial. This PC installed and removed the package. Another PC was not used. The NVIDIA runtime was not packaged, because the CUDA and cuDNN versions are not pinned.
+
+**Done when:** A self-contained CPU build installs and uninstalls, the model download rejects a bad hash, license notices ship beside the program, and another Windows PC can install and remove it.
+
+**2026-11-17 check.** 48 tests passed (Core 45, OCR 3). A 3-byte download was deleted. A file with the wrong hash was deleted and was not moved. A matching hash was moved. The model already on disk is 325,508,342 bytes and its SHA-256 is `0CFD5E79AAB70A3D8C1A57DC639835110DDB32C9F5FF4FDD1F4DB202EA43BB05`, the same value pinned in `KokoroModelLocator.ExpectedSha256`. Publish wrote 526 files to `artifacts\win-x64`, with `coreclr.dll`, `onnxruntime.dll`, `THIRD-PARTY-NOTICES.txt`, and `LICENSE.txt`. File version `0.2.0.0`. Windows build on this PC is 26300. The installer requires 19041. Install went to `%LOCALAPPDATA%\Programs\PaliaVoiceAI`. The Start menu shortcut was `Palia Voice AI.lnk`. The uninstall key was `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\PaliaVoiceAI`. The installed exe opened with the title `Palia Voice`. `WM_CLOSE` closed it. Uninstall then removed the program folder, the shortcut, and the registry key. `%LOCALAPPDATA%\PaliaVoiceAI\models\kokoro.onnx` was still there.
+
 ---
 
 # 1. What the program is
@@ -137,7 +156,7 @@ Target loop:
 - No voice cloning.
 - No cloud TTS during the intended run.
 - CUDA speech on this machine. The request falls back to CPU.
-- A finished installer.
+- A finished installer for another PC. This PC installed and removed the CPU package.
 - SQLite. Profiles and settings are JSON files today.
 
 ---
@@ -188,7 +207,7 @@ The panel is 1920×1200, not 1920×1080. Any FPS benchmark must record the resol
 | FR-011 | Stop now | Stop playback and cancel queued work | Stop drops waiting lines and stops playback. An in-flight Kokoro call still runs until the sentence ends, and that result is not played if Stop already happened |
 | FR-012 | Audio cache | Reuse audio when text, voice, and settings match | Core test: the second identical line was `FromCache` and was not generated. Pace `0.85` was generated again. Not measured with Kokoro |
 | FR-013 | Benchmark | Record generation time, audio length, RTF, and backend | One CPU row exists. The CSV is reloaded |
-| FR-014 | Remember settings | Restore local settings on launch | Capture settings, voice overrides, and the model path do this |
+| FR-014 | Remember settings | Restore local settings on launch | Capture settings, voice overrides, the model path, and `settings.json` do this. The window restored backend `Cuda`, 4 threads, `bm_lewis`, and volume 40 |
 | FR-015 | Find the game | Detect Palia or let the user capture manually | Detector is tested against process-name rules. A running game was not checked |
 | FR-016 | Set the capture region | Use a chosen region or a saved one | Saved in `capture.json`. Needs a live check |
 | FR-017 | Do-not-disturb | Turn OCR or speech off without exiting | Live capture and Apply voice can be switched off |
@@ -323,8 +342,8 @@ There is no dependency-injection container. `MainWindow` constructs the engines.
 | SET-007 | OCR project | Done | `WindowsOcrEngine` |
 | SET-008 | Infrastructure project | Not started | JSON files cover the current settings |
 | SET-009 | Dependency injection | Not started | The window creates the engines |
-| SET-010 | Logging | Not started | Failures go to status text |
-| SET-011 | Unit tests | Done | 2026-11-17: Core 37, OCR 3, all passed |
+| SET-010 | Logging | Done | `SessionLog` writes an error type and a timing under `%LOCALAPPDATA%\PaliaVoiceAI\logs`. A spoken line was not in the test file. The launch wrote no line because nothing failed |
+| SET-011 | Unit tests | Done | 2026-11-17: Core 45, OCR 3, all passed |
 | SET-012 | CI build | Not started | No pipeline |
 | SET-013 | Build on Windows | Done | Release app build on 2026-11-17, 0 warnings |
 | SET-014 | Launch the WPF window | Partial | The voice library opened and UI Automation saw the villager names. Capture was not clicked against Palia |
@@ -342,8 +361,8 @@ There is no dependency-injection container. `MainWindow` constructs the engines.
 | UI-007 | Play | Done | Last WAV. The Kokoro file was 16-bit PCM, 24000 Hz, mono |
 | UI-008 | Stop | Partial | Stops playback and drops waiting lines. Does not interrupt Kokoro mid-synthesis. A result that finishes after Stop is not played |
 | UI-009 | Benchmark grid | Partial | Shows the rows loaded from the CSV |
-| UI-010 | Errors | Partial | Exception text is shown in the status line |
-| UI-011 | Settings | Partial | Capture region, preview, and monitor are on the Settings page. There is no general settings form |
+| UI-010 | Errors | Partial | Exception text is shown in the status line. The log stores the exception type. A thrown error was not used to watch the handler that keeps the window open |
+| UI-011 | Settings | Partial | Capture region, preview, monitor, and playback volume are on the Settings page. Backend, threads, and the Voicestudio voice restore from `settings.json`. There is no audio-device picker |
 | UI-012 | Model-folder picker | Not started | The locator searches known folders and downloads into LocalAppData |
 | UI-013 | Audio device picker | Not started | Default output device |
 | UI-014 | Global stop hotkey | Not started | |
@@ -383,10 +402,10 @@ There is no dependency-injection container. `MainWindow` constructs the engines.
 | TTS-011 | Streaming | Not started | |
 | TTS-012 | Cancel generation | Partial | Stop drops waiting lines and does not play a result that finishes after Stop. The Kokoro call itself finishes |
 | TTS-013 | Keep the model locally | Done | See TTS-006 |
-| TTS-014 | Check the model hash before distribution | Not started | The downloaded file's SHA-256 was recorded. The downloader does not yet reject a mismatch. Hash: `0CFD5E79AAB70A3D8C1A57DC639835110DDB32C9F5FF4FDD1F4DB202EA43BB05` |
-| TTS-015 | License review for redistribution | Not verified | KokoroSharp is MIT. The model and voices are Apache-2.0 according to the package notes. A distribution review is still open |
+| TTS-014 | Check the model hash before distribution | Done | A short file and a wrong hash are deleted. The file on disk is 325,508,342 bytes and matches `0CFD5E79AAB70A3D8C1A57DC639835110DDB32C9F5FF4FDD1F4DB202EA43BB05`. It was not downloaded again |
+| TTS-015 | License review for redistribution | Partial | `THIRD-PARTY-NOTICES.txt` shipped beside the installed exe. The package licenses that were read are recorded there. OpenTK's nuspec names no license. Palia's terms were not read |
 
-Model URL: `https://github.com/Lyrcaxis/KokoroSharpBinaries/releases/download/v2.0.0/kokoro.onnx`. The locator also accepts `kokoro.onnx` or `kokoro-v1.0.onnx` beside the exe, in the working directory, or in Downloads, and uses that file in place. It does not copy a 310MB file. Download uses user agent `PaliaVoiceAI`, a 30-minute timeout, a `.download` temp file removed on failure, and it rejects a file under 50MB.
+Model URL: `https://github.com/Lyrcaxis/KokoroSharpBinaries/releases/download/v2.0.0/kokoro.onnx`. The locator also accepts `kokoro.onnx` or `kokoro-v1.0.onnx` beside the exe, in the working directory, or in Downloads, and uses that file in place. It does not copy a 310MB file. Download uses user agent `PaliaVoiceAI`, a 30-minute timeout, and a `.download` temp file removed on failure. `KokoroModelLocator.AcceptDownload` rejects a file under 50MB and a file whose SHA-256 is not `0cfd5e79aab70a3d8c1a57dc639835110ddb32c9f5ff4fdd1f4db202ea43bb05`. An existing file is not hashed again on every launch.
 
 Measured CPU line, voice `af_bella`, 3 threads, after the model was already present:
 
@@ -423,7 +442,7 @@ Generation 1,598 ms. Audio 4,510 ms. RTF 0.354. File 216,508 bytes. Peak sample 
 | AUD-006 | Queue | Done | `SpeechQueue` awaits one playback, then starts the next line |
 | AUD-007 | No overlap | Done | Core test kept playback concurrency at 1. The real `AudioPlayer` was not the stand-in in that test |
 | AUD-008 | Crossfade | Deferred | Not a first-release requirement |
-| AUD-009 | Volume | Not started | |
+| AUD-009 | Volume | Partial | `settings.json` stores 0–100. The window saved 40 and `AudioPlayer.Volume` is that percent divided by 100. It was not listened to |
 | AUD-010 | Long playback test | Not verified | |
 
 ## 7.7 Benchmark
@@ -492,7 +511,7 @@ Speaker rules already in code:
 | DATA-001 | SQLite | Decided only | No package and no database. Do not add SQLite unless a task needs it |
 | DATA-002 | Create the database | Not started | |
 | DATA-003 | Store voice profiles | Partial | Roster JSON plus `voices.json`. Not SQLite |
-| DATA-004 | Store settings | Partial | `capture.json`. No general settings service |
+| DATA-004 | Store settings | Done | `capture.json` and `settings.json`. The window restored backend `Cuda`, 4 threads, `bm_lewis`, and volume 40 |
 | DATA-005 | Audio cache | Done | `%LOCALAPPDATA%\PaliaVoiceAI\cache\{key}.wav`. A repeated test line was not generated again |
 | DATA-006 | Cache key | Done | Text, voice, pace, model SHA-256, engine version, and `audio/wav` |
 | DATA-007 | Cache cleanup | Partial | `DeleteOlderThan` and `DeleteAll` were tested. Settings deletes every stored line. Nothing deletes files on a timer |
@@ -502,16 +521,16 @@ Speaker rules already in code:
 
 | ID | Task | Status | Detail |
 | --- | --- | --- | --- |
-| DIST-001 | Design for later distribution | Decided only | No installer |
-| DIST-002 | Self-contained publish | Not started | |
-| DIST-003 | CPU installer | Not started | |
-| DIST-004 | NVIDIA installer | Not started | |
-| DIST-005 | Model download | Partial | First-run download exists. There is no manager window |
-| DIST-006 | File hash check | Not started | See TTS-014 |
-| DIST-007 | OS requirement check | Not started | |
+| DIST-001 | Design for later distribution | Done | Per-user CPU folder under `%LOCALAPPDATA%\Programs\PaliaVoiceAI`. No admin install. User data stays in `%LOCALAPPDATA%\PaliaVoiceAI` |
+| DIST-002 | Self-contained publish | Done | `dotnet publish` `-c Release -r win-x64 --self-contained true` wrote 526 files to `artifacts\win-x64`. `coreclr.dll` is in that folder. Version 0.2.0.0 |
+| DIST-003 | CPU installer | Done | `installer\Install.ps1` copied that folder, added the Start menu shortcut, and wrote the HKCU uninstall key. Windows build 26300 passed the 19041 check |
+| DIST-004 | NVIDIA installer | Not started | CUDA and cuDNN versions are not pinned. Do not add a GPU package until they are |
+| DIST-005 | Model download | Partial | First-run download exists and now rejects a bad hash. There is no manager window |
+| DIST-006 | File hash check | Done | See TTS-014 |
+| DIST-007 | OS requirement check | Done | The installer stops below Windows build 19041. This PC is build 26300 |
 | DIST-008 | Auto-update | Not started | |
-| DIST-009 | Uninstaller | Not started | |
-| DIST-010 | Third-party notices | Not started | Required before distribution |
+| DIST-009 | Uninstaller | Done | `installer\Uninstall.ps1` removed the program folder, the shortcut, and the registry key. The model file remained |
+| DIST-010 | Third-party notices | Partial | `THIRD-PARTY-NOTICES.txt` and `LICENSE.txt` were beside the installed exe. OpenTK's nuspec names no license |
 | DIST-011 | Test on a second PC | Not started | |
 | DIST-012 | Code signing | Deferred | Decide before any public release |
 
@@ -521,7 +540,7 @@ Speaker rules already in code:
 
 The window opens on VoiceBox. Each card is a villager. The right panel sets that card's Kokoro voice and pace, and the microphone previews it. Apply voice speaks a newly captured line with the matched card. Hear yourself only gates automatic playback; the microphone and Generate still play. Live capture toggles the monitor.
 
-Voicestudio still has backend, voice, threads, the dialogue box, Generate, Play, and Stop. Settings has the capture region, preview, monitor, and **Delete stored lines**. A new line waits until the current one finishes. Stop drops every line that is still waiting.
+Voicestudio still has backend, voice, threads, the dialogue box, Generate, Play, and Stop. Those three choices are restored from `settings.json`. Settings has the capture region, preview, monitor, playback volume, and **Delete stored lines**. A new line waits until the current one finishes. Stop drops every line that is still waiting. An OCR or speech failure stays on the status line. A dispatcher failure is logged by type and marked handled so the window stays open. That handler was not watched with a thrown error.
 
 Files:
 
@@ -531,22 +550,28 @@ Files:
 | `%LOCALAPPDATA%\PaliaVoiceAI\voices.json` | User voice, pace, favorites, selected id, Apply voice, Hear yourself |
 | `%LOCALAPPDATA%\PaliaVoiceAI\npc-voices.json` | Optional newer copy of the roster |
 | `%LOCALAPPDATA%\PaliaVoiceAI\capture.json` | Region and monitor settings |
+| `%LOCALAPPDATA%\PaliaVoiceAI\settings.json` | Backend, CPU threads, Voicestudio voice, playback volume |
+| `%LOCALAPPDATA%\PaliaVoiceAI\logs\session.log` | Error types and timings. Older copies are `session.1.log` and `session.2.log`. Dialogue text is not written |
 | `%LOCALAPPDATA%\PaliaVoiceAI\cache\*.wav` | Stored lines. The file name is the cache key |
 | `%LOCALAPPDATA%\PaliaVoiceAI\benchmarks.csv` | Benchmark rows |
 | `%LOCALAPPDATA%\PaliaVoiceAI\last-capture.bmp` | Last capture |
 | `npc-voices.json` beside the exe | Shipped roster |
 | `Avatars\*.png` beside the exe | Wiki profile icons |
+| `THIRD-PARTY-NOTICES.txt` and `LICENSE.txt` beside the exe | License notices |
+| `installer\Install.ps1` and `installer\Uninstall.ps1` | Per-user install and removal |
 
 Limits that are still true:
 
 1. CUDA does not run on this ONNX package.
 2. Mock is silent and is not a quality sample.
 3. Mock RTF is not a TTS measurement.
-4. The model is downloaded into the user profile. It is not inside an installer.
+4. The model is downloaded into the user profile. It is not inside the installer.
 5. Speaker matching is proven on text, not on a live Palia window.
 6. A repeated line is stored in the cache. That reuse was tested with stand-in audio, not with a live Kokoro sentence.
-7. This build is not a distributable release.
+7. The CPU package installs and removes on this PC. Another PC has not installed it, and the package is not signed.
 8. Stop drops waiting lines and stops playback. It does not cut Kokoro mid-sentence. The finished call is not played if Stop already happened.
+9. Playback volume is saved. It was not compared by ear.
+10. A long play session has not been run. The log cap was tested at 700 bytes, not by filling the 512 KB app cap.
 
 ---
 
@@ -605,11 +630,19 @@ Work items inside the phase:
 ## Phase 5 — Settings and reliability
 
 - The rest of the settings, logging, and a long session.
-- CUDA failure must keep the CPU path. That fallback already exists.
+- CUDA failure must keep the CPU path. That fallback already exists. It was not requested again on 2026-11-17.
+
+**Close when:** Settings restore on launch, errors and timings are logged without the dialogue line, and a long play session has no crash and no unbounded memory growth.
+
+**2026-11-17:** The user said to run this phase. `AppSettingsStore` and `SessionLog` are in Core. The window restored backend `Cuda`, 4 threads, voice `bm_lewis`, and volume 40 from `settings.json`. The log test omitted `Hello! Welcome to Kilima Village. How can I help you today?` and rolled a 700-byte file over to two older files. See T5. The long play session was not run, so this phase is not closed. Types: `AppSettings`, `AppSettingsStore`, `SessionLog`, `SpeechTiming`. The volume slider is on the Settings page. `AudioPlayer.Volume` takes 0–1.
 
 ## Phase 6 — Packaging
 
 - CPU publish, optional NVIDIA runtime, model download, hash check, installer, license notices, a clean install on another PC, and uninstall.
+
+**Close when:** Another Windows PC can install the CPU package and remove it.
+
+**2026-11-17:** The user said to complete this phase. The CPU publish, hash check, notices, installer, and uninstaller were checked on this PC. See T6. Types: `KokoroModelLocator.AcceptDownload`. Scripts: `installer\Install.ps1` and `installer\Uninstall.ps1`. The NVIDIA runtime was not packaged. Another PC was not used, so this phase is not closed. The remaining checks are in `PaliaVoiceAI-Open-Checks.md`.
 
 ---
 
@@ -731,7 +764,7 @@ Still undecided:
 4. Whether Unknown should stay silent when Apply voice is on. Today it speaks with `af_bella`.
 5. Final voice casting. Only `af_bella` has been heard. Do not change the JSON ids as part of a cleanup.
 6. Cache size and eviction.
-7. Installer and update mechanism.
+7. Update mechanism. The CPU installer is the per-user folder in T6.
 8. Which FPS tool to trust.
 
 ---
@@ -752,8 +785,8 @@ Still undecided:
 | Stop cuts the current audio | Playback yes. Waiting lines are dropped. Mid-synthesis Kokoro still finishes and is not played if Stop already happened |
 | Cache works | Tested with stand-in audio. A live Kokoro replay was not measured |
 | FPS gates | Not measured |
-| Another PC can install it | Not done |
-| Licenses reviewed for distribution | Not done |
+| Another PC can install it | This PC installed and removed the CPU package. Another PC has not |
+| Licenses reviewed for distribution | Notices shipped. OpenTK's nuspec names no license. Palia's terms were not read |
 
 ---
 
@@ -772,6 +805,8 @@ Still undecided:
 | 2026-11-17 | The user heard the two `af_bella` pace files. They did not describe the sound. Other voices and FPS remain unconfirmed. |
 | 2026-11-17 | The user cannot perform the remaining in-game checks. The duplicate line and a nameless card stay open. |
 | 2026-11-17 | The user said to skip T2 and T3 and start Phase 4. `SpeechQueue` waits. The same text, voice, pace, and model was not generated again. Stop drops a waiting line. Cache files are in `%LOCALAPPDATA%\PaliaVoiceAI\cache`. 40 tests passed (Core 37, OCR 3). Release build had 0 warnings. Kokoro cache replay and Palia were not part of this check. |
+| 2026-11-17 | The user said to run Phase 5. `settings.json` restored backend `Cuda`, 4 threads, `bm_lewis`, and volume 40 after the window closed. The log omitted the spoken line and rolled over at a 700-byte test cap. 46 tests passed (Core 43, OCR 3). Release build had 0 warnings. A long play session, a provoked crash, and a volume listening check were not run. |
+| 2026-11-17 | The user said to complete Phase 6. The self-contained CPU package installed and uninstalled on this PC. The model hash matched the pinned SHA-256, and a wrong hash was rejected in a test. 48 tests passed (Core 45, OCR 3). Another PC, the NVIDIA runtime, and a signed package were not part of this check. |
 
 ---
 

@@ -45,6 +45,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            _log.Error("capture", ex.GetType().Name);
             GameWindowStatus.Text = ex.Message;
         }
     }
@@ -64,6 +65,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            _log.Error("capture", ex.GetType().Name);
             CaptureStatus.Text = ex.Message;
         }
     }
@@ -97,6 +99,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            _log.Error("capture", ex.GetType().Name);
             CaptureStatus.Text = ex.Message;
         }
         finally
@@ -151,7 +154,11 @@ public partial class MainWindow
                 {
                     try
                     {
-                        await Dispatcher.InvokeAsync(() => CaptureStatus.Text = ex.Message);
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            _log.Error("capture", ex.GetType().Name);
+                            CaptureStatus.Text = ex.Message;
+                        });
                     }
                     catch (InvalidOperationException)
                     {
@@ -199,6 +206,7 @@ public partial class MainWindow
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                _log.Error("capture", ex.GetType().Name);
                 CaptureStatus.Text = ex.Message;
                 return;
             }

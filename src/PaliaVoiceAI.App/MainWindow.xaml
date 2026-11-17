@@ -236,7 +236,7 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Margin="0,0,12,0">
                         <TextBlock Text="Backend" Foreground="#9B94B8" Margin="0,0,0,5"/>
-                        <ComboBox x:Name="BackendBox" SelectedIndex="1">
+                        <ComboBox x:Name="BackendBox" SelectedIndex="1" SelectionChanged="EngineChoice_Changed">
                             <ComboBoxItem Content="Mock (silent pipeline test)"/>
                             <ComboBoxItem Content="CPU (Kokoro)"/>
                             <ComboBoxItem Content="CUDA (Kokoro, falls back to CPU)"/>
@@ -244,11 +244,11 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1" Margin="0,0,12,0">
                         <TextBlock Text="Voice" Foreground="#9B94B8" Margin="0,0,0,5"/>
-                        <ComboBox x:Name="VoiceBox"/>
+                        <ComboBox x:Name="VoiceBox" SelectionChanged="EngineChoice_Changed"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2">
                         <TextBlock Text="CPU threads" Foreground="#9B94B8" Margin="0,0,0,5"/>
-                        <ComboBox x:Name="ThreadsBox" SelectedIndex="1">
+                        <ComboBox x:Name="ThreadsBox" SelectedIndex="1" SelectionChanged="EngineChoice_Changed">
                             <ComboBoxItem Content="2"/>
                             <ComboBoxItem Content="3"/>
                             <ComboBoxItem Content="4"/>
@@ -270,6 +270,15 @@
                     <TextBlock Text="Settings" FontSize="22" FontWeight="SemiBold"/>
                     <TextBlock TextWrapping="Wrap" Foreground="#9B94B8" Margin="0,8,0,14"
                                Text="Reads the dialogue region with Windows OCR. A line is accepted only after it stays still. When Apply voice is on, a known name uses that villager's voice. A line with no name uses Unknown."/>
+                    <TextBlock Text="Playback" FontSize="16" FontWeight="SemiBold" Margin="0,4,0,8"/>
+                    <DockPanel Margin="0,0,0,6" LastChildFill="True">
+                        <TextBlock x:Name="VolumeReadout" DockPanel.Dock="Right" Width="52" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="#F4F1FF" Text="100%"/>
+                        <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="100" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="VolumeSlider_ValueChanged"/>
+                    </DockPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="#9B94B8" Margin="0,0,0,8"
+                               Text="This volume is used for preview, Generate, and captured lines. Backend, CPU threads, and the Voicestudio voice are restored on the next launch."/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#9B94B8" Margin="0,0,0,16"
+                               Text="Errors and timings are written to %LOCALAPPDATA%\PaliaVoiceAI\logs. The log stores the error type and the timing. It does not store the dialogue line."/>
                     <CheckBox x:Name="UseGameWindowBox" Content="Capture the Palia window" IsChecked="True" Foreground="#F4F1FF" Checked="CaptureMode_Changed" Unchecked="CaptureMode_Changed"/>
                     <TextBlock x:Name="GameWindowStatus" Margin="0,8,0,0" TextWrapping="Wrap" Text="Palia has not been looked up yet."/>
                     <TextBlock x:Name="RegionHint" Margin="0,4,0,0" Foreground="#9B94B8" Text="Region is relative to the Palia client area, in pixels."/>

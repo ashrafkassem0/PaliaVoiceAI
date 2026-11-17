@@ -45,11 +45,7 @@ public static class KokoroModelDownloader
                 }
             }
 
-            var downloaded = new FileInfo(temporary);
-            if (downloaded.Length < 50_000_000)
-                throw new InvalidOperationException($"The Kokoro download stopped early ({downloaded.Length:N0} bytes).");
-
-            File.Move(temporary, destination, overwrite: true);
+            KokoroModelLocator.AcceptDownload(temporary, destination);
         }
         catch
         {

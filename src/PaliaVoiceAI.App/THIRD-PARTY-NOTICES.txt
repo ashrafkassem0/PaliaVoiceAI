@@ -1,0 +1,39 @@
+Palia Voice AI 0.2.0
+Third-party notices
+
+These are the licenses named by the packages that this build copies next to the program.
+The Kokoro model is not in the installer. The first speech downloads it.
+
+KokoroSharp 0.8.4 and KokoroSharp.CPU 0.8.4
+Author: Lyrcaxis
+License: MIT
+https://github.com/Lyrcaxis/KokoroSharp
+
+The KokoroSharp 0.8.4 readme says the Kokoro 82M model and its voices are Apache-2.0.
+The voice files ship in the voices folder. Their license text is voices\LICENSE.
+The model file checked by this app is kokoro.onnx from
+https://github.com/Lyrcaxis/KokoroSharpBinaries/releases/download/v2.0.0/kokoro.onnx
+SHA-256: 0cfd5e79aab70a3d8c1a57dc639835110ddb32c9f5ff4fdd1f4db202ea43bb05
+These voices are not the original Palia actors.
+
+Microsoft.ML.OnnxRuntime 1.22.0
+Copyright (c) Microsoft Corporation
+License: MIT, from the package LICENSE file.
+
+NAudio 2.2.1
+Copyright 2020 Mark Heath
+License: MIT, from the package license.txt. The package copyright line also says © Mark Heath 2023.
+
+MisakiSharp 2.1.1
+Author: Lyrcaxis
+License: Apache-2.0
+
+NumSharp 0.30.0
+Copyright 2021 © SciSharp STACK Team
+License: Apache-2.0, from the package LICENSE file.
+
+OpenTK.Audio.OpenAL 5.0.0-pre.13
+Author: Team OpenTK
+The package metadata does not name a license.
+
+Windows OCR and Windows Graphics Capture are part of Windows. They are not copied into this folder.
