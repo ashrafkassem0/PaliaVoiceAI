@@ -36,7 +36,7 @@ public partial class MainWindow
 
         ProfileVoiceBox.DisplayMemberPath = nameof(KokoroVoiceChoice.Label);
         ProfileVoiceBox.SelectedValuePath = nameof(KokoroVoiceChoice.Id);
-        ProfileVoiceBox.ItemsSource = KokoroVoices.English;
+        ProfileVoiceBox.ItemsSource = KokoroVoices.Assignable;
         VoiceBox.Items.Clear();
         foreach (var voice in KokoroVoices.English)
             VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Label, Tag = voice.Id });
@@ -158,6 +158,7 @@ public partial class MainWindow
         DetailName.Text = card.Name;
         DetailRole.Text = card.Role;
         DetailIntro.Text = card.Intro;
+        DetailVoiceStatus.Text = card.VoiceStatusText;
         BottomName.Text = card.Name;
         BottomRole.Text = card.VoiceLabel;
         ProfileVoiceBox.SelectedValue = card.VoiceId;
@@ -208,9 +209,11 @@ public partial class MainWindow
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(card.VoiceId))
+        if (!KokoroVoices.IsKnown(card.VoiceId))
         {
-            StatusText.Text = $"{card.Name} has no Kokoro voice yet. Set voiceId in npc-voices.json.";
+            StatusText.Text = string.IsNullOrWhiteSpace(card.VoiceId)
+                ? $"{card.Name} has no Kokoro voice yet. Choose one in the list, or set voiceId in npc-voices.json."
+                : $"{card.Name} voice '{card.VoiceId}' is not a Kokoro voice in this app.";
             return;
         }
 
@@ -334,10 +337,12 @@ public partial class MainWindow
         if (CopyDialogueBox.IsChecked == true)
             DialogueBox.Text = text;
 
-        StatusText.Text = string.IsNullOrWhiteSpace(card.VoiceId)
-            ? $"{card.Name} has no Kokoro voice yet. Set voiceId in npc-voices.json."
-            : $"{card.Name} is speaking with {card.VoiceLabel}.";
-        if (ApplyVoiceBox.IsChecked != true || string.IsNullOrWhiteSpace(card.VoiceId))
+        StatusText.Text = KokoroVoices.IsKnown(card.VoiceId)
+            ? $"{card.Name} is speaking with {card.VoiceLabel}."
+            : string.IsNullOrWhiteSpace(card.VoiceId)
+                ? $"{card.Name} has no Kokoro voice yet. The line was not spoken."
+                : $"{card.Name} voice '{card.VoiceId}' is not a Kokoro voice in this app. The line was not spoken.";
+        if (ApplyVoiceBox.IsChecked != true || !KokoroVoices.IsKnown(card.VoiceId))
             return;
 
         var (threads, backend) = ReadEngineChoice();
@@ -373,6 +378,7 @@ public sealed class NpcCard : INotifyPropertyChanged
     public required string DefaultVoiceId { get; init; }
     public required float DefaultPace { get; init; }
     public string Gender { get; init; } = string.Empty;
+    public string VoiceStatusText { get; init; } = "No Kokoro voice is configured.";
     public ImageSource? Avatar { get; init; }
     public Visibility AvatarVisibility => Avatar is null ? Visibility.Collapsed : Visibility.Visible;
     public Visibility PortraitVisibility => Avatar is null ? Visibility.Visible : Visibility.Collapsed;
@@ -416,7 +422,7 @@ public sealed class NpcCard : INotifyPropertyChanged
         }
     }
 
-    public string VoiceLabel => string.IsNullOrWhiteSpace(VoiceId) ? "Unassigned" : KokoroVoices.Label(VoiceId);
+    public string VoiceLabel => KokoroVoices.Label(VoiceId);
     public bool IsCustom => !string.Equals(VoiceId, DefaultVoiceId, StringComparison.OrdinalIgnoreCase);
     public string HeartGlyph => IsFavorite ? "\uEB52" : "\uEB51";
     public Brush HeartBrush => IsFavorite ? HeartOn : HeartOff;
@@ -435,6 +441,11 @@ public sealed class NpcCard : INotifyPropertyChanged
             DefaultVoiceId = profile.VoiceId,
             DefaultPace = profile.Speed,
             Gender = profile.Gender,
+            VoiceStatusText = profile.HasAssignedVoice
+                ? profile.VoiceSelectionConfidence
+                : string.IsNullOrWhiteSpace(profile.VoiceId)
+                    ? "No Kokoro voice is configured."
+                    : $"Voice '{profile.VoiceId}' is not available in this app.",
             Avatar = LoadAvatar(profile.Avatar),
             VoiceId = library.VoiceFor(profile),
             Pace = library.PaceFor(profile.Id, profile.Speed),

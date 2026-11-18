@@ -2,6 +2,41 @@ using System.Text.Json;
 
 namespace PaliaVoiceAI.Core;
 
+public enum NpcGender
+{
+    Unknown,
+    Female,
+    Male
+}
+
+public enum NpcAgeGroup
+{
+    Unknown,
+    Child,
+    Teen,
+    YoungAdult,
+    Adult,
+    Elder
+}
+
+public enum NpcSpecies
+{
+    Unknown,
+    Majiri,
+    Galdur,
+    Grimalkin,
+    Plumehound,
+    Human,
+    Dragon
+}
+
+public enum VoiceAssignmentStatus
+{
+    Unassigned,
+    Provisional,
+    Confirmed
+}
+
 public sealed record NpcProfile(
     string Id,
     string Name,
@@ -10,7 +45,29 @@ public sealed record NpcProfile(
     string Intro,
     string? Avatar = null,
     float Speed = 1f,
-    string Gender = "");
+    string Gender = "",
+    string AgeGroup = "unknown",
+    string Species = "Unknown",
+    string Personality = "",
+    string VoiceTone = "",
+    string DeliveryDirection = "",
+    string PitchDirection = "",
+    string VoiceSelectionNotes = "",
+    string VoiceSelectionConfidence = "",
+    string VoiceStatus = "")
+{
+    public bool HasAssignedVoice => KokoroVoices.IsKnown(VoiceId);
+
+    public NpcGender GenderKind => NpcFacts.ParseGender(Gender);
+
+    public NpcAgeGroup AgeGroupKind => NpcFacts.ParseAgeGroup(AgeGroup);
+
+    public NpcSpecies SpeciesKind => NpcFacts.ParseSpecies(Species);
+
+    public VoiceAssignmentStatus AssignmentStatus => NpcFacts.ParseStatus(VoiceStatus, HasAssignedVoice);
+
+    public string SpeakableVoiceId => HasAssignedVoice ? VoiceId : string.Empty;
+}
 
 public sealed record KokoroVoiceChoice(string Id, string Label, string Group)
 {
@@ -28,9 +85,11 @@ public static class NpcCatalog
 
     private static readonly JsonSerializerOptions Json = new()
     {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
+        AllowTrailingCommas = true,
+        WriteIndented = true
     };
 
     private static IReadOnlyList<NpcProfile>? _all;
@@ -65,45 +124,108 @@ public static class NpcCatalog
                 return;
             }
 
-            var roster = JsonSerializer.Deserialize<RosterFile>(File.ReadAllText(path), Json);
-            var profiles = new List<NpcProfile>();
-            foreach (var character in roster?.Characters ?? [])
-            {
-                if (character.Enabled == false || string.IsNullOrWhiteSpace(character.Id) || string.IsNullOrWhiteSpace(character.Name))
-                    continue;
-
-                var voiceId = character.VoiceId?.Trim() ?? string.Empty;
-                var name = character.Name.Trim();
-                profiles.Add(new NpcProfile(
-                    character.Id.Trim(),
-                    name,
-                    string.IsNullOrWhiteSpace(character.Role) ? name : character.Role.Trim(),
-                    voiceId,
-                    string.IsNullOrWhiteSpace(character.Intro)
-                        ? string.IsNullOrWhiteSpace(voiceId)
-                            ? $"No Kokoro voice is assigned yet. Set voiceId in npc-voices.json."
-                            : $"This voice is assigned to {name}."
-                        : character.Intro.Trim(),
-                    string.IsNullOrWhiteSpace(character.Avatar) ? null : character.Avatar.Trim().Replace('\\', '/'),
-                    (float)Math.Clamp(character.Speed <= 0 ? 1 : character.Speed, 0.85, 1.15),
-                    character.Gender?.Trim().ToLowerInvariant() ?? string.Empty));
-            }
-
-            if (profiles.All(profile => !string.Equals(profile.Id, "unknown", StringComparison.OrdinalIgnoreCase)))
-                profiles.Insert(0, FallbackUnknown);
-
-            _all = profiles;
-            LoadError = null;
+            var result = Read(File.ReadAllText(path));
+            _all = result.Profiles;
+            LoadError = result.Error ?? (result.Problems.Count > 0 ? result.Problems[0] : null);
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _all = [FallbackUnknown];
             LoadError = ex.Message;
         }
     }
 
+    public static RosterLoad Read(string json)
+    {
+        try
+        {
+            var roster = JsonSerializer.Deserialize<RosterFile>(json, Json);
+            var profiles = new List<NpcProfile>();
+            foreach (var character in roster?.Characters ?? [])
+            {
+                if (character.Enabled == false || string.IsNullOrWhiteSpace(character.Id) || string.IsNullOrWhiteSpace(character.Name))
+                    continue;
+
+                profiles.Add(ToProfile(character));
+            }
+
+            if (profiles.All(profile => !string.Equals(profile.Id, "unknown", StringComparison.OrdinalIgnoreCase)))
+                profiles.Insert(0, FallbackUnknown);
+
+            return new RosterLoad(profiles, null, NpcRosterRules.Problems(profiles));
+        }
+        catch (JsonException ex)
+        {
+            return new RosterLoad([FallbackUnknown], ex.Message, []);
+        }
+    }
+
+    public static string ToJson(IEnumerable<NpcProfile> profiles)
+    {
+        var roster = new RosterFile
+        {
+            Characters = profiles.Select(ToCharacter).ToList()
+        };
+        return JsonSerializer.Serialize(roster, Json);
+    }
+
+    private static NpcProfile ToProfile(RosterCharacter character)
+    {
+        var voiceId = character.VoiceId?.Trim() ?? string.Empty;
+        var name = character.Name.Trim();
+        var gender = NpcFacts.CanonicalGender(character.Gender);
+        var ageGroup = NpcFacts.CanonicalAgeGroup(character.AgeGroup);
+        var species = NpcFacts.CanonicalSpecies(character.Species);
+        var status = NpcFacts.CanonicalStatus(character.VoiceStatus, KokoroVoices.IsKnown(voiceId));
+        return new NpcProfile(
+            character.Id.Trim(),
+            name,
+            string.IsNullOrWhiteSpace(character.Role) ? name : character.Role.Trim(),
+            voiceId,
+            string.IsNullOrWhiteSpace(character.Intro)
+                ? string.IsNullOrWhiteSpace(voiceId)
+                    ? "No Kokoro voice is assigned yet. Set voiceId in npc-voices.json."
+                    : $"This voice is assigned to {name}."
+                : character.Intro.Trim(),
+            string.IsNullOrWhiteSpace(character.Avatar) ? null : character.Avatar.Trim().Replace('\\', '/'),
+            (float)Math.Clamp(character.Speed <= 0 ? 1 : character.Speed, 0.85, 1.15),
+            gender,
+            ageGroup,
+            species,
+            character.Personality?.Trim() ?? string.Empty,
+            character.VoiceTone?.Trim() ?? string.Empty,
+            character.DeliveryDirection?.Trim() ?? string.Empty,
+            character.PitchDirection?.Trim() ?? string.Empty,
+            character.VoiceSelectionNotes?.Trim() ?? string.Empty,
+            character.VoiceSelectionConfidence?.Trim() ?? string.Empty,
+            status);
+    }
+
+    private static RosterCharacter ToCharacter(NpcProfile profile) => new()
+    {
+        Id = profile.Id,
+        Name = profile.Name,
+        Role = profile.Role,
+        Gender = profile.Gender,
+        VoiceId = profile.VoiceId,
+        Speed = profile.Speed,
+        Avatar = profile.Avatar ?? string.Empty,
+        Intro = profile.Intro,
+        AgeGroup = profile.AgeGroup,
+        Species = profile.Species,
+        Personality = profile.Personality,
+        VoiceTone = profile.VoiceTone,
+        DeliveryDirection = profile.DeliveryDirection,
+        PitchDirection = profile.PitchDirection,
+        VoiceSelectionNotes = profile.VoiceSelectionNotes,
+        VoiceSelectionConfidence = profile.VoiceSelectionConfidence,
+        VoiceStatus = profile.VoiceStatus,
+        Enabled = true
+    };
+
     private sealed class RosterFile
     {
+        public int Version { get; set; } = 1;
         public List<RosterCharacter> Characters { get; set; } = [];
     }
 
@@ -113,11 +235,152 @@ public static class NpcCatalog
         public string Name { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
         public string? Gender { get; set; }
+        public string? AgeGroup { get; set; }
+        public string? Species { get; set; }
+        public string? Personality { get; set; }
         public string? VoiceId { get; set; }
         public double Speed { get; set; } = 1;
         public string? Avatar { get; set; }
         public string? Intro { get; set; }
+        public string? VoiceTone { get; set; }
+        public string? DeliveryDirection { get; set; }
+        public string? PitchDirection { get; set; }
+        public string? VoiceSelectionNotes { get; set; }
+        public string? VoiceSelectionConfidence { get; set; }
+        public string? VoiceStatus { get; set; }
         public bool Enabled { get; set; } = true;
+    }
+}
+
+public readonly record struct RosterLoad(
+    IReadOnlyList<NpcProfile> Profiles,
+    string? Error,
+    IReadOnlyList<string> Problems);
+
+public static class NpcFacts
+{
+    public static NpcGender ParseGender(string? value) => CanonicalGender(value) switch
+    {
+        "female" => NpcGender.Female,
+        "male" => NpcGender.Male,
+        _ => NpcGender.Unknown
+    };
+
+    public static NpcAgeGroup ParseAgeGroup(string? value) => CanonicalAgeGroup(value) switch
+    {
+        "child" => NpcAgeGroup.Child,
+        "teen" => NpcAgeGroup.Teen,
+        "youngAdult" => NpcAgeGroup.YoungAdult,
+        "adult" => NpcAgeGroup.Adult,
+        "elder" => NpcAgeGroup.Elder,
+        _ => NpcAgeGroup.Unknown
+    };
+
+    public static NpcSpecies ParseSpecies(string? value) => CanonicalSpecies(value) switch
+    {
+        "Majiri" => NpcSpecies.Majiri,
+        "Galdur" => NpcSpecies.Galdur,
+        "Grimalkin" => NpcSpecies.Grimalkin,
+        "Plumehound" => NpcSpecies.Plumehound,
+        "Human" => NpcSpecies.Human,
+        "Dragon" => NpcSpecies.Dragon,
+        _ => NpcSpecies.Unknown
+    };
+
+    public static VoiceAssignmentStatus ParseStatus(string? value, bool hasAssignedVoice) => CanonicalStatus(value, hasAssignedVoice) switch
+    {
+        "confirmed" => VoiceAssignmentStatus.Confirmed,
+        "provisional" => VoiceAssignmentStatus.Provisional,
+        _ => VoiceAssignmentStatus.Unassigned
+    };
+
+    public static string CanonicalGender(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "female" or "f" => "female",
+        "male" or "m" => "male",
+        _ => "unknown"
+    };
+
+    public static string CanonicalAgeGroup(string? value)
+    {
+        var token = Compact(value);
+        return token switch
+        {
+            "child" => "child",
+            "teen" or "teenager" => "teen",
+            "youngadult" or "youngteen" => "youngAdult",
+            "adult" or "matureadult" or "olderadult" => "adult",
+            "elder" => "elder",
+            _ => "unknown"
+        };
+    }
+
+    public static string CanonicalSpecies(string? value)
+    {
+        var token = Compact(value);
+        return token switch
+        {
+            "majiri" => "Majiri",
+            "galdur" => "Galdur",
+            "grimalkin" => "Grimalkin",
+            "plumehound" => "Plumehound",
+            "human" => "Human",
+            "dragon" => "Dragon",
+            _ => "Unknown"
+        };
+    }
+
+    public static string CanonicalStatus(string? value, bool hasAssignedVoice)
+    {
+        var token = Compact(value);
+        if (token is "confirmed" or "provisional" or "unassigned")
+            return token;
+        return hasAssignedVoice ? "provisional" : "unassigned";
+    }
+
+    private static string Compact(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+        var buffer = new System.Text.StringBuilder(value.Length);
+        foreach (var ch in value.Trim())
+        {
+            if (char.IsLetterOrDigit(ch))
+                buffer.Append(char.ToLowerInvariant(ch));
+        }
+
+        return buffer.ToString();
+    }
+}
+
+public static class NpcRosterRules
+{
+    public static IReadOnlyList<string> Problems(IEnumerable<NpcProfile> profiles)
+    {
+        var problems = new List<string>();
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var profile in profiles)
+        {
+            if (string.IsNullOrWhiteSpace(profile.Id) || string.IsNullOrWhiteSpace(profile.Name))
+            {
+                problems.Add("A profile is missing an id or a name.");
+                continue;
+            }
+
+            if (!ids.Add(profile.Id))
+                problems.Add($"Duplicate id '{profile.Id}'.");
+
+            if (!string.IsNullOrWhiteSpace(profile.VoiceId) && !KokoroVoices.IsKnown(profile.VoiceId))
+                problems.Add($"{profile.Id} voice '{profile.VoiceId}' is not a Kokoro voice in this app.");
+
+            if (profile.AssignmentStatus == VoiceAssignmentStatus.Unassigned && profile.HasAssignedVoice)
+                problems.Add($"{profile.Id} is marked unassigned but has voice '{profile.VoiceId}'.");
+
+            if (profile.AssignmentStatus != VoiceAssignmentStatus.Unassigned && !profile.HasAssignedVoice)
+                problems.Add($"{profile.Id} is marked {profile.VoiceStatus} but has no supported voice.");
+        }
+
+        return problems;
     }
 }
 
@@ -125,6 +388,7 @@ public static class KokoroVoices
 {
     public static IReadOnlyList<KokoroVoiceChoice> English { get; } =
     [
+        new("af_aoede", "Aoede", "American woman"),
         new("af_bella", "Bella", "American woman"),
         new("af_heart", "Heart", "American woman"),
         new("af_jessica", "Jessica", "American woman"),
@@ -150,10 +414,19 @@ public static class KokoroVoices
         new("bm_lewis", "Lewis", "British man")
     ];
 
-    public static string Label(string? voiceId) =>
-        English.FirstOrDefault(voice => string.Equals(voice.Id, voiceId, StringComparison.OrdinalIgnoreCase))?.Label
-        ?? voiceId
-        ?? string.Empty;
+    public static IReadOnlyList<KokoroVoiceChoice> Assignable { get; } =
+    [
+        new("", "Unassigned", "None"),
+        ..English
+    ];
+
+    public static string Label(string? voiceId)
+    {
+        if (string.IsNullOrWhiteSpace(voiceId))
+            return "Unassigned";
+        return English.FirstOrDefault(voice => string.Equals(voice.Id, voiceId, StringComparison.OrdinalIgnoreCase))?.Label
+            ?? voiceId;
+    }
 
     public static bool IsKnown(string? voiceId) =>
         English.Any(voice => string.Equals(voice.Id, voiceId, StringComparison.OrdinalIgnoreCase));
@@ -310,8 +583,18 @@ public sealed class VoiceLibraryState
     public bool ApplyVoice { get; set; } = true;
     public bool HearYourself { get; set; } = true;
 
-    public string VoiceFor(NpcProfile profile) =>
-        Voices.TryGetValue(profile.Id, out var voice) && KokoroVoices.IsKnown(voice) ? voice : profile.VoiceId;
+    public string VoiceFor(NpcProfile profile)
+    {
+        if (Voices.TryGetValue(profile.Id, out var voice))
+        {
+            if (string.IsNullOrWhiteSpace(voice))
+                return string.Empty;
+            if (KokoroVoices.IsKnown(voice))
+                return voice;
+        }
+
+        return profile.SpeakableVoiceId;
+    }
 
     public float PaceFor(string npcId, float fallback = 1f)
     {

@@ -203,6 +203,7 @@
                         <StackPanel VerticalAlignment="Top">
                             <TextBlock Text="Assigned voice" Foreground="#9B94B8" FontSize="12" Margin="0,0,0,6"/>
                             <ComboBox x:Name="ProfileVoiceBox" SelectionChanged="ProfileVoiceBox_SelectionChanged"/>
+                            <TextBlock x:Name="DetailVoiceStatus" TextWrapping="Wrap" Foreground="#9B94B8" FontSize="12" Margin="0,8,0,0"/>
                             <TextBlock Text="Pace" Foreground="#9B94B8" FontSize="12" Margin="0,14,0,6"/>
                             <Slider x:Name="PaceSlider" Minimum="0.85" Maximum="1.15" Value="1" TickFrequency="0.05" IsSnapToTickEnabled="True" ValueChanged="PaceSlider_ValueChanged"/>
                             <TextBlock x:Name="DetailIntro" TextWrapping="Wrap" Foreground="#C9C3E0" Margin="0,14,0,0"/>
