@@ -15,11 +15,22 @@
     <Content Include="..\..\LICENSE.txt" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="KokoroSharp" Version="0.8.4" />
+    <PackageReference Include="KokoroSharp" Version="0.8.4" GeneratePathProperty="true" />
     <ProjectReference Include="..\PaliaVoiceAI.Core\PaliaVoiceAI.Core.csproj" />
     <ProjectReference Include="..\PaliaVoiceAI.TTS\PaliaVoiceAI.TTS.csproj" />
     <ProjectReference Include="..\PaliaVoiceAI.Audio\PaliaVoiceAI.Audio.csproj" />
     <ProjectReference Include="..\PaliaVoiceAI.Capture\PaliaVoiceAI.Capture.csproj" />
     <ProjectReference Include="..\PaliaVoiceAI.OCR\PaliaVoiceAI.OCR.csproj" />
   </ItemGroup>
+  <!-- KokoroSharp copies voices only after Build, into the bin folder. Publish output is a different directory, so the installed app never received voices\af_bella.npy. -->
+  <Target Name="CopyKokoroVoicesToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_KokoroVoiceFile Include="$(PkgKokoroSharp)\content\voices\**\*" />
+    </ItemGroup>
+    <Error Condition="@(_KokoroVoiceFile->Count()) == 0"
+           Text="Kokoro voices were not found in the KokoroSharp package at '$(PkgKokoroSharp)\content\voices'." />
+    <Copy SourceFiles="@(_KokoroVoiceFile)"
+          DestinationFiles="@(_KokoroVoiceFile->'$(PublishDir)voices\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

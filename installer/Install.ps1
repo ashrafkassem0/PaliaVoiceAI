@@ -50,6 +50,11 @@ if (-not (Test-Path -LiteralPath $exe)) {
     throw "The CPU package was not found at $exe"
 }
 
+$voice = Join-Path $Source 'voices\af_bella.npy'
+if (-not (Test-Path -LiteralPath $voice)) {
+    throw "The CPU package is missing voices\af_bella.npy. Kokoro cannot speak until that file is next to the app."
+}
+
 Close-PaliaVoiceApp
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 & robocopy $Source $InstallDir /MIR /NFL /NDL /NJH /NJS /nc /ns /np
