@@ -42,6 +42,16 @@ public class SpeakerIdentifierTests
     }
 
     [Fact]
+    public void A_card_without_a_name_is_not_voiced()
+    {
+        Assert.Null(SpeakerIdentifier.FindNpcId("Sometimes I like to go watch the fish."));
+        Assert.False(SpeakerIdentifier.IsNamedSpeaker(null));
+        Assert.False(SpeakerIdentifier.IsNamedSpeaker(string.Empty));
+        Assert.False(SpeakerIdentifier.IsNamedSpeaker(NpcCatalog.Unknown.Id));
+        Assert.True(SpeakerIdentifier.IsNamedSpeaker("einar"));
+    }
+
+    [Fact]
     public void Round_trips_a_voice_assignment()
     {
         var path = Path.Combine(Path.GetTempPath(), "PaliaVoiceAI-tests", Guid.NewGuid().ToString("N"), "voices.json");

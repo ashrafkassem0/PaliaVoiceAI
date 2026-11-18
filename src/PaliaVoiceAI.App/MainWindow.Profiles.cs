@@ -318,7 +318,16 @@ public partial class MainWindow
 
     private void SpeakCapturedLine(string text, string? speakerId)
     {
-        var card = _cards.FirstOrDefault(item => item.Id == speakerId) ?? _cards.First(item => item.Id == NpcCatalog.Unknown.Id);
+        var card = SpeakerIdentifier.IsNamedSpeaker(speakerId)
+            ? _cards.FirstOrDefault(item => item.Id == speakerId)
+            : null;
+        if (card is null)
+        {
+            var skipped = "No name was on the card. The line was not spoken.";
+            StatusText.Text = skipped;
+            CaptureStatus.Text = skipped;
+            return;
+        }
         _filter = "all";
         _voices?.Refresh();
         VoiceList.SelectedItem = card;
@@ -327,9 +336,7 @@ public partial class MainWindow
 
         StatusText.Text = string.IsNullOrWhiteSpace(card.VoiceId)
             ? $"{card.Name} has no Kokoro voice yet. Set voiceId in npc-voices.json."
-            : speakerId is null
-                ? $"No name was on the card. Using {card.Name}."
-                : $"{card.Name} is speaking with {card.VoiceLabel}.";
+            : $"{card.Name} is speaking with {card.VoiceLabel}.";
         if (ApplyVoiceBox.IsChecked != true || string.IsNullOrWhiteSpace(card.VoiceId))
             return;
 

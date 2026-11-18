@@ -8,7 +8,7 @@ What was already checked stays in `PaliaVoiceAI-Project-Master.md`. This file is
 
 | ID | Still open | Done when |
 | --- | --- | --- |
-| T2 | A card with no name plate has not been captured. Einar's plate already selected `einar`. Daiya, named only in the sentence, was not selected. | A live card with no name plate selects Unknown. Paste the OCR text into the master. |
+| T2 | Einar's plate selected `einar`. A card with no name is not spoken. A live nameless card has not been captured. | A live card with no name plate is ignored and is not spoken. Paste the OCR text into the master. |
 | T3 | The same line was not seen again inside the 8 second duplicate window, because the Einar card advanced. | Leave one line up, close it, and open that same line again within 8 seconds. Record the process name, region, and text. |
 | OCR-004 | The live region `105,550` `780×350` contained Einar's card. It has not been checked against a later session. | The crop still contains the whole card on the window that is actually open. |
 | BM-001 | Palia alone for 10 minutes was not measured. | Average FPS and 1% low are written down for that scene. |

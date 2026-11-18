@@ -47,7 +47,7 @@ Last full check on 2026-11-17: 48 tests passed (Core 45, OCR 3). The CPU package
 | --- | --- | --- |
 | 1. Kokoro speech | Real local speech on CPU, then CUDA if it is available, with a repeatable measurement | CPU speech was measured again while the Palia process was running. CUDA still falls back to CPU. The user heard the two `af_bella` pace files and did not describe the sound. Other voices were not heard. FPS beside the game was not measured. |
 | 2. OCR and capture | Read a new dialogue line once, and do not read the same line again | The live window was found and one Einar line was spoken once. The same line was not seen again inside the duplicate window, because the card advanced. |
-| 3. NPC voices | Pick the right voice profile for known dialogue, and do something clear when the speaker is unknown | Einar's name plate selected Einar. Daiya, named only in the sentence, was not selected. Pace `0.85` is longer than `1.15` for `af_bella`. A card with no name plate has not been captured. |
+| 3. NPC voices | Pick the right voice profile for known dialogue, and do something clear when the speaker is unknown | Einar's name plate selected Einar. Daiya, named only in the sentence, was not selected. A card with no name is not spoken. A live nameless card has not been captured. |
 | 4. Queue and cache | No overlapping speech, and no second generation when text, voice, and settings match | Checked in Core tests. A new line waits until the current line finishes playing. The same text, voice, pace, and model was not generated again. Stop drops a line that is still waiting. A live Kokoro sentence was not replayed from the cache, and Palia was not running. |
 | 5. Settings and reliability | Settings, logging, and a long play session | Partial. Backend, threads, the Voicestudio voice, and volume restore from `settings.json`. The log stores an error type and a timing, and a spoken line was not written. A long play session was not run. |
 | 6. Installer | Another Windows PC can install and remove it | Partial. This PC installed and removed the self-contained CPU package. Another PC was not used. The NVIDIA runtime was not packaged. |
@@ -70,9 +70,9 @@ Last full check on 2026-11-17: 48 tests passed (Core 45, OCR 3). The CPU package
 
 ## T2 — Live speaker check
 
-**Status:** Partial. Einar was selected from a live card. A card with no name plate has not been captured. On 2026-11-17 the user said to skip this check and start Phase 4.
+**Status:** Partial. Einar was selected from a live card. On 2026-11-17 the user said a card with no name is ignored, and a voice is made only when a name plate is present. `SpeakCapturedLine` returns before playback when `SpeakerIdentifier.IsNamedSpeaker` is false. The test line `Sometimes I like to go watch the fish.` returned no speaker. `IsNamedSpeaker` was false for null, empty, and `unknown`, and true for `einar`. 49 tests passed (Core 46, OCR 3). The Release build had 0 warnings. A live nameless card has not been captured.
 
-**Done when:** A real dialogue card whose first plate is a known name selects that villager. A card with no name plate selects Unknown. A name that only appears inside a sentence does not select that villager. Paste the OCR text into the Phase 3 status.
+**Done when:** A real dialogue card whose first plate is a known name selects that villager and is the only card that is spoken. A card with no name plate is not spoken. A name that only appears inside a sentence does not select that villager. Paste the OCR text into the Phase 3 status.
 
 **2026-11-17 live card.** Process `PaliaClientSteam-Win64-Shipping`, title `Palia`, client 1536×960 at (0, 0). Region `105,550` size `780×350` (the 1920×1200 capture frame is the same client at 125% scale). Raw OCR:
 
@@ -135,7 +135,7 @@ Target loop:
 1. Capture the dialogue area.
 2. Read it with OCR.
 3. Keep the line only after the text has stopped changing, and drop a duplicate.
-4. If the name plate is a known villager, use that profile. Otherwise use Unknown.
+4. If the name plate is a known villager, use that profile. A card with no name is not spoken.
 5. Speak it with local Kokoro, one generation at a time.
 6. Play the WAV without touching the game.
 7. Later, reuse a stored WAV when the line and the settings match. The cache key and the folder exist. A live Kokoro replay from that folder was not measured.
@@ -500,7 +500,7 @@ Speaker rules already in code:
 | NPC-003 | Bind a voice id | Done | Default in the roster JSON. User change in `voices.json` |
 | NPC-004 | Read the name from the screen | Partial | Live OCR `Einar I -` selected `einar`. A card with no name plate has not been tried |
 | NPC-005 | Identification rules | Done | Plate only. A mentioned name does not match |
-| NPC-006 | Unknown speaker | Done | Unknown card and `af_bella`, unless the user overrode it |
+| NPC-006 | Unknown speaker | Partial | A missing name is not spoken. The Unknown card remains in the library. A live nameless card has not been captured |
 | NPC-007 | Per-character voice and pace | Partial | Voice edits are saved. The user heard `af_bella` at `0.85` and `1.15`. They gave no quality note |
 | NPC-008 | Tests | Partial | Kenyatta, Eshe, Nai'o, and the Einar badge lines. Live test: Einar's card selected `einar`. No nameless card yet |
 
@@ -608,7 +608,7 @@ Limits that are still true:
 
 **Close when:** Known dialogue selects that villager's profile, and an unidentified speaker has an obvious fallback.
 
-**2026-11-17:** The text side of that close is in place and unit-tested. Unknown is the fallback. The window can change the voice. Pace was compared (T1): `af_bella` at `0.85` is 5,084 ms and at `1.15` is 4,086 ms. Live selection: Einar's plate selected `einar` (see T2). A card with no name plate has not been captured. Mapping-file voice suggestions were not applied.
+**2026-11-17:** The text side of that close is in place and unit-tested. A card with no name is not spoken. The window can change the voice. Pace was compared (T1): `af_bella` at `0.85` is 5,084 ms and at `1.15` is 4,086 ms. Live selection: Einar's plate selected `einar` (see T2). A live nameless card has not been captured. Mapping-file voice suggestions were not applied.
 
 Work items inside the phase:
 
@@ -705,7 +705,7 @@ Screen capture
   -> Text normalization
   -> Wait until the text is stable
   -> Drop a duplicate
-  -> Name-plate match, else Unknown
+  -> Name-plate match, else do not speak
   -> Voice and pace from the roster, then the user override
   -> Cache lookup
   -> Kokoro if there was no cache hit
@@ -721,7 +721,7 @@ Rules:
 - The cache key is the trimmed text, voice id, pace, model hash, engine version, and `audio/wav`. The text alone is not enough.
 - A new line waits. It does not start until the current line has finished playing.
 - Do not use an LLM to guess the speaker when the name plate is missing.
-- If the speaker is unclear, use Unknown. Do not assign a random voice.
+- If the speaker is unclear, do not speak the line. Do not assign a random voice.
 - Keep the spoken line separate from the name plate and from UI prompts.
 
 ---
@@ -748,7 +748,7 @@ Rules:
 | R-003 | GPU speech hurts the game | Compare CPU and CUDA while Palia is running before enabling CUDA |
 | R-004 | OCR reads UI that is not dialogue | Keep the region tight and the cleanup rules |
 | R-005 | OCR drops part of a line | The stable-read count is the current protection. Add a merge only if a live capture shows a split line |
-| R-006 | Wrong speaker | Trust the name plate. Unknown is the fallback |
+| R-006 | Wrong speaker | Trust the name plate. A card with no name is not spoken |
 | R-007 | A name is pronounced badly | Listening test. Do not spell-correct game text such as `hoppu` |
 | R-008 | The installer is huge because of the model | Keep the on-demand download |
 | R-009 | Other PCs differ | CPU must work. GPU stays optional |
@@ -761,11 +761,10 @@ Still undecided:
 1. Which ONNX Runtime GPU package, if CUDA stays a goal. The CPU package is 1.22.0.
 2. CUDA or DirectML. The current package uses CPU.
 3. The live dialogue region. T3.
-4. Whether Unknown should stay silent when Apply voice is on. Today it speaks with `af_bella`.
-5. Final voice casting. Only `af_bella` has been heard. Do not change the JSON ids as part of a cleanup.
-6. Cache size and eviction.
-7. Update mechanism. The CPU installer is the per-user folder in T6.
-8. Which FPS tool to trust.
+4. Final voice casting. Only `af_bella` has been heard. Do not change the JSON ids as part of a cleanup.
+5. Cache size and eviction.
+6. Update mechanism. The CPU installer is the per-user folder in T6.
+7. Which FPS tool to trust.
 
 ---
 
@@ -807,6 +806,7 @@ Still undecided:
 | 2026-11-17 | The user said to skip T2 and T3 and start Phase 4. `SpeechQueue` waits. The same text, voice, pace, and model was not generated again. Stop drops a waiting line. Cache files are in `%LOCALAPPDATA%\PaliaVoiceAI\cache`. 40 tests passed (Core 37, OCR 3). Release build had 0 warnings. Kokoro cache replay and Palia were not part of this check. |
 | 2026-11-17 | The user said to run Phase 5. `settings.json` restored backend `Cuda`, 4 threads, `bm_lewis`, and volume 40 after the window closed. The log omitted the spoken line and rolled over at a 700-byte test cap. 46 tests passed (Core 43, OCR 3). Release build had 0 warnings. A long play session, a provoked crash, and a volume listening check were not run. |
 | 2026-11-17 | The user said to complete Phase 6. The self-contained CPU package installed and uninstalled on this PC. The model hash matched the pinned SHA-256, and a wrong hash was rejected in a test. 48 tests passed (Core 45, OCR 3). Another PC, the NVIDIA runtime, and a signed package were not part of this check. |
+| 2026-11-17 | A captured card with no name is not spoken. `IsNamedSpeaker` was false for null, empty, and `unknown`, and true for `einar`. The line `Sometimes I like to go watch the fish.` selected nobody. 49 tests passed (Core 46, OCR 3). Release build had 0 warnings. A live nameless card was not captured. |
 
 ---
 

@@ -269,7 +269,7 @@
                 <StackPanel>
                     <TextBlock Text="Settings" FontSize="22" FontWeight="SemiBold"/>
                     <TextBlock TextWrapping="Wrap" Foreground="#9B94B8" Margin="0,8,0,14"
-                               Text="Reads the dialogue region with Windows OCR. A line is accepted only after it stays still. When Apply voice is on, a known name uses that villager's voice. A line with no name uses Unknown."/>
+                               Text="Reads the dialogue region with Windows OCR. A line is accepted only after it stays still. When Apply voice is on, a known name uses that villager's voice. A card with no name is not spoken."/>
                     <TextBlock Text="Playback" FontSize="16" FontWeight="SemiBold" Margin="0,4,0,8"/>
                     <DockPanel Margin="0,0,0,6" LastChildFill="True">
                         <TextBlock x:Name="VolumeReadout" DockPanel.Dock="Right" Width="52" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="#F4F1FF" Text="100%"/>

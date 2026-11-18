@@ -183,6 +183,10 @@ public static class SpeakerIdentifier
         return null;
     }
 
+    public static bool IsNamedSpeaker(string? npcId) =>
+        !string.IsNullOrWhiteSpace(npcId) &&
+        !string.Equals(npcId, NpcCatalog.Unknown.Id, StringComparison.OrdinalIgnoreCase);
+
     private static IEnumerable<string> Lines(string raw)
     {
         var normalized = raw.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
