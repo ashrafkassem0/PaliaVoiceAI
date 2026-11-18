@@ -143,7 +143,9 @@ public partial class MainWindow
                     var ocr = await _ocr.RecognizeAsync(image, token).ConfigureAwait(false);
                     var observation = tracker.Observe(ocr.Text, DateTimeOffset.Now);
                     var saveImage = observation.HasNewDialogue;
-                    var speakerId = observation.HasNewDialogue ? SpeakerIdentifier.FindNpcId(ocr.Text) : null;
+                    var speakerId = observation.HasNewDialogue || observation.PrepareSpeech
+                        ? SpeakerIdentifier.FindNpcId(ocr.Text)
+                        : null;
                     await Dispatcher.InvokeAsync(() => ApplyObservation(image, observation, saveImage, speakerId));
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -221,6 +223,8 @@ public partial class MainWindow
             _ => observation.Text.Length == 0 ? "No dialogue in the region." : "Text is still changing. Waiting until it stays still."
         };
 
+        if (observation.PrepareSpeech)
+            PrefetchCapturedLine(observation.Text, speakerId);
         if (observation.HasNewDialogue)
             SpeakCapturedLine(observation.Text, speakerId);
     }

@@ -319,6 +319,50 @@ public partial class MainWindow
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
+    private void PrefetchCapturedLine(string text, string? speakerId)
+    {
+        if (!TryGetCapturedVoice(text, speakerId, out var voiceId, out var pace, out var threads, out var backend))
+            return;
+
+        _ = PrefetchAsync(text, voiceId, threads, backend, pace);
+    }
+
+    private async Task PrefetchAsync(string text, string voiceId, int threads, TtsBackend backend, float pace)
+    {
+        try
+        {
+            await _speech.SubmitAsync(new SpeechRequest(text, voiceId, pace, backend, threads, Play: false));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _log.Error("speech", ex.GetType().Name);
+        }
+    }
+
+    private bool TryGetCapturedVoice(string text, string? speakerId, out string voiceId, out float pace, out int threads, out TtsBackend backend)
+    {
+        voiceId = string.Empty;
+        pace = 1f;
+        threads = 3;
+        backend = TtsBackend.Cpu;
+        if (string.IsNullOrWhiteSpace(text) || ApplyVoiceBox.IsChecked != true)
+            return false;
+
+        var card = SpeakerIdentifier.IsNamedSpeaker(speakerId)
+            ? _cards.FirstOrDefault(item => item.Id == speakerId)
+            : null;
+        if (card is null || !KokoroVoices.IsKnown(card.VoiceId))
+            return false;
+
+        (threads, backend) = ReadEngineChoice();
+        voiceId = card.VoiceId;
+        pace = card.Pace;
+        return true;
+    }
+
     private void SpeakCapturedLine(string text, string? speakerId)
     {
         var card = SpeakerIdentifier.IsNamedSpeaker(speakerId)
