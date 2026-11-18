@@ -9,7 +9,7 @@ public enum DialogueSignal
     DuplicateSuppressed
 }
 
-public sealed record DialogueObservation(DialogueSignal Signal, string Text, bool PrepareSpeech = false)
+public sealed record DialogueObservation(DialogueSignal Signal, string Text)
 {
     public bool HasNewDialogue => Signal is DialogueSignal.Started or DialogueSignal.Changed;
 }

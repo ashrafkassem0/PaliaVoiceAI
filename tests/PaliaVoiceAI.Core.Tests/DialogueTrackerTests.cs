@@ -46,21 +46,4 @@ public class DialogueTrackerTests
         Assert.Equal(DialogueSignal.None, tracker.Observe(string.Empty, Start.AddMilliseconds(200)).Signal);
         Assert.Equal(DialogueSignal.Ended, tracker.Observe(string.Empty, Start.AddMilliseconds(300)).Signal);
     }
-
-    [Fact]
-    public void Prepares_a_finished_line_before_the_confirming_read()
-    {
-        var tracker = new DialogueTracker(2, TimeSpan.FromSeconds(8));
-
-        var first = tracker.Observe("Hello there.", Start);
-        Assert.Equal(DialogueSignal.None, first.Signal);
-        Assert.True(first.PrepareSpeech);
-
-        var ready = tracker.Observe("Hello there.", Start.AddMilliseconds(400));
-        Assert.Equal(DialogueSignal.Started, ready.Signal);
-        Assert.False(ready.PrepareSpeech);
-
-        var growing = new DialogueTracker(2, TimeSpan.FromSeconds(8)).Observe("Hello", Start);
-        Assert.False(growing.PrepareSpeech);
-    }
 }

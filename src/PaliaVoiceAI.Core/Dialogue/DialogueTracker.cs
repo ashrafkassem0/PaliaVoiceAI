@@ -46,16 +46,13 @@ public sealed class DialogueTracker
         }
 
         if (_candidateCount < _stableReads)
-        {
-            var prepare = _candidateCount == 1 && IsCompleteLine(display) && IsNewLine(key, now);
-            return new DialogueObservation(DialogueSignal.None, display, prepare);
-        }
+            return new DialogueObservation(DialogueSignal.None, display);
 
-        if (!IsNewLine(key, now))
-        {
-            if (string.Equals(key, _activeKey, StringComparison.Ordinal))
-                return new DialogueObservation(DialogueSignal.None, _candidateDisplay);
+        if (string.Equals(key, _activeKey, StringComparison.Ordinal))
+            return new DialogueObservation(DialogueSignal.None, _candidateDisplay);
 
+        if (string.Equals(key, _lastAcceptedKey, StringComparison.Ordinal) && now - _lastAcceptedAt < _duplicateWindow)
+        {
             _activeKey = key;
             if (_duplicateNotified)
                 return new DialogueObservation(DialogueSignal.None, _candidateDisplay);
@@ -84,17 +81,5 @@ public sealed class DialogueTracker
         _activeKey = null;
         _duplicateNotified = false;
         return new DialogueObservation(DialogueSignal.Ended, string.Empty);
-    }
-
-    private bool IsNewLine(string key, DateTimeOffset now)
-    {
-        if (string.Equals(key, _activeKey, StringComparison.Ordinal))
-            return false;
-        return !(string.Equals(key, _lastAcceptedKey, StringComparison.Ordinal) && now - _lastAcceptedAt < _duplicateWindow);
-    }
-
-    private static bool IsCompleteLine(string display)
-    {
-        return display.Contains('.') || display.Contains('?') || display.Contains('!');
     }
 }
